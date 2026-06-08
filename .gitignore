@@ -1,0 +1,6 @@
+/target
+/frontend/dist
+/frontend/node_modules
+/active-workflows
+config.toml
+.env
