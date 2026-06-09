@@ -1,13 +1,29 @@
 :root {
-  --bg-color: #1a1a24;
-  --panel-bg: #222230;
-  --border-color: #38384d;
-  --text-main: #e0e0e6;
-  --text-muted: #a0a0b0;
-  --accent: #7b61ff;
-  --accent-hover: #9b88ff;
-  --danger: #ff5c5c;
-  --success: #4cd964;
+  --midnight: #0a0a12;
+  --deep-night: #12121f;
+  --twilight: #1a1a2e;
+  --crimson-shadow: #4a1028;
+  --crimson: #8b1538;
+  --crimson-glow: #c41e3a;
+  --violet-shadow: #2d1b4e;
+  --violet: #6b4c9a;
+  --violet-glow: #9d7bd4;
+  --gold-dim: #8b7355;
+  --gold: #d4af37;
+  --gold-bright: #ffd700;
+  --silver: #c0c0d0;
+  --star-white: #f0f0ff;
+  --text-primary: #e8e6f0;
+  --text-muted: #9896a4;
+
+  --bg-color: var(--midnight);
+  --panel-bg: rgba(26, 26, 46, 0.85); /* Twilight with opacity for glassmorphism */
+  --border-color: var(--violet-shadow);
+  --text-main: var(--text-primary);
+  --accent: var(--violet);
+  --accent-hover: var(--violet-glow);
+  --danger: var(--crimson-glow);
+  --success: var(--gold);
 }
 
 * {
@@ -17,62 +33,210 @@
 }
 
 body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background-color: var(--bg-color);
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  background: 
+      radial-gradient(ellipse at 20% 20%, var(--violet-shadow) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 80%, var(--crimson-shadow) 0%, transparent 50%),
+      radial-gradient(ellipse at 50% 50%, var(--deep-night) 0%, var(--midnight) 100%);
+  background-color: var(--midnight);
+  background-attachment: fixed;
   color: var(--text-main);
   height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
+/* Base layouts */
 #root {
   display: flex;
   height: 100%;
   width: 100%;
+  position: relative;
+  z-index: 10;
+}
+
+/* Adds stars behind the main UI */
+#root::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background-image: 
+      radial-gradient(1px 1px at 10% 20%, var(--star-white) 100%, transparent),
+      radial-gradient(1.5px 1.5px at 30% 40%, var(--gold) 100%, transparent),
+      radial-gradient(1px 1px at 50% 10%, var(--star-white) 100%, transparent),
+      radial-gradient(2px 2px at 70% 30%, var(--violet-glow) 100%, transparent),
+      radial-gradient(1px 1px at 90% 50%, var(--star-white) 100%, transparent),
+      radial-gradient(1.5px 1.5px at 20% 80%, var(--gold) 100%, transparent),
+      radial-gradient(1px 1px at 40% 70%, var(--star-white) 100%, transparent),
+      radial-gradient(2px 2px at 60% 90%, var(--violet-glow) 100%, transparent),
+      radial-gradient(1.5px 1.5px at 80% 80%, var(--gold) 100%, transparent);
+  background-size: 400px 400px;
+  opacity: 0.3;
+  z-index: -2;
+  animation: twinkle 10s ease-in-out infinite alternate;
+}
+
+@keyframes twinkle {
+  0% { opacity: 0.2; }
+  100% { opacity: 0.5; }
 }
 
 h1, h2, h3, h4 {
+  font-family: 'Cinzel', serif;
   font-weight: 600;
   color: #fff;
+  letter-spacing: 0.05em;
 }
 
+/* 3D Fancy Buttons mapped from Landing Page */
 button {
-  background-color: var(--accent);
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  padding: 8px 16px;
-  cursor: pointer;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.7rem 1.5rem;
+  font-family: 'Fira Code', monospace;
+  font-size: 0.9rem;
   font-weight: 500;
-  transition: background-color 0.2s;
+  text-decoration: none;
+  color: var(--text-primary);
+  background: linear-gradient(145deg, var(--twilight), var(--deep-night));
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transform-style: preserve-3d;
+  transform: translateY(0) translateZ(0);
+  transition: all 0.2s ease;
+  box-shadow:
+      0 4px 0 0 var(--midnight),
+      0 6px 12px -2px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+}
+
+button::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 10px;
+  background: linear-gradient(135deg,
+          var(--crimson-glow),
+          var(--violet-glow),
+          var(--gold),
+          var(--crimson-glow));
+  background-size: 300% 300%;
+  z-index: -2;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  animation: borderGlow 4s linear infinite paused;
+}
+
+button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  background: linear-gradient(145deg, var(--twilight), var(--deep-night));
+  z-index: -1;
 }
 
 button:hover {
-  background-color: var(--accent-hover);
+  transform: translateY(-4px) translateZ(10px);
+  box-shadow:
+      0 8px 0 0 var(--midnight),
+      0 12px 24px -4px rgba(0, 0, 0, 0.6),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
 }
 
-input[type="text"], input[type="password"] {
-  background-color: #15151e;
+button:hover::before {
+  opacity: 1;
+  animation-play-state: running;
+}
+
+button:active {
+  transform: translateY(2px) translateZ(0);
+  box-shadow:
+      0 2px 0 0 var(--midnight),
+      0 4px 8px -2px rgba(0, 0, 0, 0.4),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.03);
+}
+
+.flat-btn {
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.flat-btn::before, .flat-btn::after {
+  display: none !important;
+}
+
+.danger-btn {
+  background: linear-gradient(145deg, var(--danger), var(--crimson-shadow)) !important;
+}
+
+.danger-btn::after {
+  background: linear-gradient(145deg, var(--danger), var(--crimson-shadow)) !important;
+}
+
+.secondary-btn {
+  background: linear-gradient(145deg, var(--panel-bg), var(--midnight)) !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+.secondary-btn::after {
+  background: linear-gradient(145deg, var(--panel-bg), var(--midnight)) !important;
+}
+
+.accent-btn {
+  background: linear-gradient(145deg, var(--accent), var(--violet-shadow)) !important;
+}
+
+.accent-btn::after {
+  background: linear-gradient(145deg, var(--accent), var(--violet-shadow)) !important;
+}
+
+@keyframes borderGlow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+input[type="text"], input[type="password"], select, textarea {
+  background: linear-gradient(145deg, var(--twilight), var(--deep-night));
   border: 1px solid var(--border-color);
   color: var(--text-main);
-  border-radius: 4px;
-  padding: 8px 12px;
+  border-radius: 6px;
+  padding: 10px 14px;
   outline: none;
+  font-family: 'Fira Code', monospace;
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.5);
+  transition: border-color 0.3s;
 }
 
-input[type="text"]:focus, input[type="password"]:focus {
-  border-color: var(--accent);
+input[type="text"]:focus, input[type="password"]:focus, select:focus, textarea:focus {
+  border-color: var(--gold);
 }
 
 .panel {
   background-color: var(--panel-bg);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 24px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  backdrop-filter: blur(10px);
 }
 
-/* Base layouts */
 .login-container, .onboarding-container {
   display: flex;
   align-items: center;
@@ -94,6 +258,7 @@ input[type="text"]:focus, input[type="password"]:focus {
   display: flex;
   flex-direction: column;
   padding: 20px;
+  backdrop-filter: blur(10px);
 }
 
 .workspace {
@@ -107,6 +272,12 @@ input[type="text"]:focus, input[type="password"]:focus {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.form-group label {
+  font-family: 'Fira Code', monospace;
+  font-size: 0.85rem;
+  color: var(--text-muted);
 }
 
 @keyframes pulse {

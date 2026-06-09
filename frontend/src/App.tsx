@@ -374,7 +374,7 @@ function WorkspaceEditor({ wf, wfJson, config, setConfig }: any) {
         <h2>Editing: {wf}</h2>
         <div style={{ marginTop: 20 }}>
           <button onClick={addExposedField} style={{ marginRight: 10 }}>+ Add Mapped Field (Manual)</button>
-          <button onClick={() => setShowPopup(true)} style={{ backgroundColor: '#4b3f8f' }}>Restructure (Assisted)</button>
+          <button className="accent-btn" onClick={() => setShowPopup(true)}>Restructure (Assisted)</button>
         </div>
 
         <div style={{ marginTop: 30 }}>
@@ -429,7 +429,7 @@ function WorkspaceEditor({ wf, wfJson, config, setConfig }: any) {
                   const newFields = [...(wfConfig?.exposed_fields || [])];
                   newFields.splice(idx, 1);
                   setConfig({ ...config, workflows: { ...config.workflows, [wf]: { ...wfConfig, exposed_fields: newFields } } });
-                }} style={{ backgroundColor: 'var(--danger)', padding: '6px 10px', marginLeft: 'auto' }}>X</button>
+                }} className="danger-btn" style={{ padding: '6px 10px', marginLeft: 'auto' }}>X</button>
               </div>
               {field.is_value_map && (
                 <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: 15, marginTop: 10, padding: 10, backgroundColor: '#15151e', borderRadius: 4 }}>
@@ -500,7 +500,7 @@ function WorkspaceEditor({ wf, wfJson, config, setConfig }: any) {
               style={{ width: '100%', height: 120, padding: 10, backgroundColor: '#15151e', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: 4, marginBottom: 15, fontFamily: 'inherit' }}
             />
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowPopup(false)} style={{ backgroundColor: 'var(--panel-bg)', border: '1px solid var(--border-color)' }}>Cancel</button>
+              <button className="secondary-btn" onClick={() => setShowPopup(false)}>Cancel</button>
               <button onClick={handleAssistedRestructure}>Submit to LLM</button>
             </div>
           </div>
@@ -619,15 +619,12 @@ with open("output.png", "wb") as f:
             <button 
               onClick={handleRun} 
               disabled={isGenerating}
+              className={isGenerating ? "secondary-btn" : "accent-btn"}
               style={{ 
                 padding: '15px', 
                 fontSize: 16, 
                 fontWeight: 'bold', 
-                cursor: isGenerating ? 'not-allowed' : 'pointer', 
-                backgroundColor: isGenerating ? 'var(--border-color)' : 'var(--accent)', 
-                color: 'white', 
-                border: 'none', 
-                borderRadius: 6 
+                cursor: isGenerating ? 'not-allowed' : 'pointer',
               }}
             >
               {isGenerating ? 'Generating...' : '🚀 Run Generation'}
@@ -655,12 +652,14 @@ with open("output.png", "wb") as f:
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', marginBottom: 20 }}>
           <button 
             onClick={() => setActiveTab('curl')}
-            style={{ backgroundColor: 'transparent', color: activeTab === 'curl' ? 'var(--accent)' : 'var(--text-muted)', borderBottom: activeTab === 'curl' ? '2px solid var(--accent)' : '2px solid transparent', borderRadius: 0, padding: '10px 20px' }}>
+            className="flat-btn"
+            style={{ color: activeTab === 'curl' ? 'var(--accent)' : 'var(--text-muted)', borderBottom: activeTab === 'curl' ? '2px solid var(--accent)' : '2px solid transparent', borderRadius: 0, padding: '10px 20px' }}>
             cURL
           </button>
           <button 
             onClick={() => setActiveTab('python')}
-            style={{ backgroundColor: 'transparent', color: activeTab === 'python' ? 'var(--accent)' : 'var(--text-muted)', borderBottom: activeTab === 'python' ? '2px solid var(--accent)' : '2px solid transparent', borderRadius: 0, padding: '10px 20px' }}>
+            className="flat-btn"
+            style={{ color: activeTab === 'python' ? 'var(--accent)' : 'var(--text-muted)', borderBottom: activeTab === 'python' ? '2px solid var(--accent)' : '2px solid transparent', borderRadius: 0, padding: '10px 20px' }}>
             Python
           </button>
         </div>
