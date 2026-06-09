@@ -74,3 +74,6 @@ API_KEYS=sk-mysecretkey,sk-anotherkey
 
 ## License
 MIT
+
+## AI Disclosure
+Because this project can be used in situations where security matters, I am disclosing that the project was AI assisted. While the presence of `AGENTS.md` is usually a telling sign, full transparency is important in this case.
