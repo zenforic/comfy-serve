@@ -518,6 +518,9 @@ function TestApiView({ config }: { config: any }) {
   const [resultImage, setResultImage] = useState<string | null>(null);
   const [resultError, setResultError] = useState<string | null>(null);
   const [testApiKey, setTestApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [showSnippets, setShowSnippets] = useState(true);
+  const [copied, setCopied] = useState(false);
 
   if (!config || !config.workflows) {
     return <div style={{ padding: 20 }}>No config loaded.</div>;
@@ -562,6 +565,34 @@ with open("output.png", "wb") as f:
     f.write(response.content)
 `;
 
+  const displayApiKey = testApiKey ? (showApiKey ? testApiKey : "••••••••••••••••") : "";
+  const authHeaderCurlDisplay = displayApiKey ? ` \\\n  -H "Authorization: Bearer ${displayApiKey}"` : "";
+  const curlReqDisplay = `curl -X POST http://127.0.0.1:3000/api/generate \\
+  -H "Content-Type: application/json"${authHeaderCurlDisplay} \\
+  -d '${escapedCurlBody}'`;
+
+  const authHeaderPythonDisplay = displayApiKey ? `, "Authorization": f"Bearer {api_key}"` : "";
+  const pythonReqDisplay = `import requests
+
+url = "http://127.0.0.1:3000/api/generate"
+data = '''${JSON.stringify({
+    workflow: selectedWf,
+    params: params
+}, null, 4)}'''
+${displayApiKey ? `\napi_key = "${displayApiKey}"` : ""}
+response = requests.post(url, data=data, headers={"Content-Type": "application/json"${authHeaderPythonDisplay}})
+
+with open("output.png", "wb") as f:
+    f.write(response.content)
+`;
+
+  const handleCopy = () => {
+    const textToCopy = activeTab === 'curl' ? curlReq : pythonReq;
+    navigator.clipboard.writeText(textToCopy);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const handleRun = async () => {
     setIsGenerating(true);
     setResultImage(null);
@@ -598,13 +629,28 @@ with open("output.png", "wb") as f:
         
         <div className="form-group" style={{ marginBottom: 15 }}>
           <label>API Key (Optional)</label>
-          <input 
-            type="password" 
-            value={testApiKey} 
-            onChange={e => setTestApiKey(e.target.value)}
-            placeholder="sk-..."
-            style={{ width: '100%', padding: 10, backgroundColor: '#15151e', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: 4 }}
-          />
+          <div style={{ display: 'flex', gap: 10 }}>
+            <input 
+              type={showApiKey ? "text" : "password"} 
+              value={testApiKey} 
+              onChange={e => setTestApiKey(e.target.value)}
+              placeholder="sk-..."
+              style={{ flex: 1, padding: 10, backgroundColor: '#15151e', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: 4 }}
+            />
+            <button className="secondary-btn" onClick={() => setShowApiKey(!showApiKey)} title="Toggle API Key Visibility" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 12px' }}>
+              {showApiKey ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                  <line x1="1" y1="1" x2="23" y2="23"></line>
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              )}
+            </button>
+          </div>
         </div>
 
         <div className="form-group" style={{ marginBottom: 30 }}>
@@ -671,26 +717,58 @@ with open("output.png", "wb") as f:
             </div>
           </div>
         )}
-        <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', marginBottom: 20 }}>
-          <button 
-            onClick={() => setActiveTab('curl')}
-            className="flat-btn"
-            style={{ color: activeTab === 'curl' ? 'var(--accent)' : 'var(--text-muted)', borderBottom: activeTab === 'curl' ? '2px solid var(--accent)' : '2px solid transparent', borderRadius: 0, padding: '10px 20px' }}>
-            cURL
-          </button>
-          <button 
-            onClick={() => setActiveTab('python')}
-            className="flat-btn"
-            style={{ color: activeTab === 'python' ? 'var(--accent)' : 'var(--text-muted)', borderBottom: activeTab === 'python' ? '2px solid var(--accent)' : '2px solid transparent', borderRadius: 0, padding: '10px 20px' }}>
-            Python
-          </button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', marginBottom: showSnippets ? 20 : 0 }}>
+          <div style={{ display: 'flex' }}>
+            <button 
+              onClick={() => setActiveTab('curl')}
+              className="flat-btn"
+              style={{ color: activeTab === 'curl' ? 'var(--accent)' : 'var(--text-muted)', borderBottom: activeTab === 'curl' ? '2px solid var(--accent)' : '2px solid transparent', borderRadius: 0, padding: '10px 20px' }}>
+              cURL
+            </button>
+            <button 
+              onClick={() => setActiveTab('python')}
+              className="flat-btn"
+              style={{ color: activeTab === 'python' ? 'var(--accent)' : 'var(--text-muted)', borderBottom: activeTab === 'python' ? '2px solid var(--accent)' : '2px solid transparent', borderRadius: 0, padding: '10px 20px' }}>
+              Python
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: 10, paddingBottom: 10 }}>
+            {showSnippets && <button onClick={handleCopy} className="secondary-btn" style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 6 }}>
+              {copied ? (
+                <>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  Copy
+                </>
+              )}
+            </button>}
+            <button onClick={() => setShowSnippets(!showSnippets)} className="secondary-btn" style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 6 }}>
+              {showSnippets ? (
+                <>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                  Hide
+                </>
+              ) : (
+                <>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                  Show Snippets
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
-        <pre style={{ backgroundColor: '#1d1d26', padding: 20, borderRadius: 8, overflowX: 'auto', flex: 1, border: '1px solid var(--border-color)', margin: 0, fontSize: 13, lineHeight: '1.5', whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>
-          <code>
-            {activeTab === 'curl' ? curlReq : pythonReq}
-          </code>
-        </pre>
+        {showSnippets && (
+          <pre style={{ backgroundColor: '#1d1d26', padding: 20, borderRadius: 8, overflowX: 'auto', flex: 1, border: '1px solid var(--border-color)', margin: 0, fontSize: 13, lineHeight: '1.5', whiteSpace: 'pre-wrap', wordWrap: 'break-word', minHeight: 0 }}>
+            <code>
+              {activeTab === 'curl' ? curlReqDisplay : pythonReqDisplay}
+            </code>
+          </pre>
+        )}
       </div>
     </div>
   );
