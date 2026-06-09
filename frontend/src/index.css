@@ -108,3 +108,20 @@ input[type="text"]:focus, input[type="password"]:focus {
   flex-direction: column;
   gap: 8px;
 }
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  20% { transform: scale(1.25); }
+  40% { transform: scale(1); }
+  60% { transform: scale(1.25); }
+  80% { transform: scale(1); }
+  100% { transform: scale(1); }
+}
+
+.heart-pulse {
+  animation: pulse 1.5s ease 2;
+  transform-origin: center;
+  fill: #000;
+  stroke: var(--border-color);
+  stroke-width: 1px;
+}

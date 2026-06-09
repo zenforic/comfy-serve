@@ -4,3 +4,4 @@
 /active-workflows
 config.toml
 .env
+test_*

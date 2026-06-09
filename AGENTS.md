@@ -53,6 +53,15 @@ The dashboard allows automated field extraction using an OpenAI-compatible endpo
 - Accepts a workflow JSON and user prompt, and wraps it in a strict system prompt demanding a JSON array matching the `WorkflowFieldMap` layout.
 - The user can optionally override the target Model string from the popup. If left blank in the onboarding config, the `model` parameter is intentionally omitted from the HTTP request to maximize compatibility with local servers like vLLM.
 
+## CLI Arguments
+
+- `--log-level debug`: Enables verbose debugging logs.
+- `--no-log-workflow`: Disables logging of the full ComfyUI JSON payload to the console when in debug mode, keeping the console clean while still logging the incoming frontend parameters.
+
+## Handling ComfyUI WebSocket Caching
+
+`SaveImageWebsocket` nodes in ComfyUI do not write to the disk/history, meaning if ComfyUI caches the node execution, the binary image is never transmitted over the WebSocket. To fix this, `comfy-serve` dynamically intercepts all incoming workflows, identifies any `SaveImageWebsocket` nodes, and injects a randomized `comfy_serve_salt` hidden input. This forces the node to bypass ComfyUI's cache entirely and always execute, guaranteeing that images are delivered to the proxy.
+
 ## Future Work
 
 - **Workflow Queuing**: Currently, `comfy-serve` opens a WebSocket connection and waits synchronously for the image to generate. If many requests come in, this could hold many open connections. Consider switching to an async task polling model if traffic scales.

@@ -21,6 +21,12 @@ use tracing::info;
 
 use crate::config::Config;
 
+#[derive(clap::ValueEnum, Clone, Debug)]
+enum LogLevel {
+    Info,
+    Debug,
+}
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -31,6 +37,14 @@ struct Args {
     /// Port to listen on
     #[arg(short, long, env = "PORT", default_value_t = 3000)]
     port: u16,
+
+    /// Log level: info or debug
+    #[arg(short, long, value_enum)]
+    log_level: Option<LogLevel>,
+
+    /// Disable logging of the full workflow JSON request to ComfyUI in debug mode
+    #[arg(long)]
+    no_log_workflow: bool,
 }
 
 #[derive(RustEmbed)]
@@ -126,13 +140,14 @@ async fn check_auth_handler(State(state): State<AppState>, req: axum::extract::R
     (StatusCode::UNAUTHORIZED, "Unauthorized").into_response()
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, serde::Serialize)]
 struct GenerateRequest {
     workflow: String,
     params: std::collections::HashMap<String, serde_json::Value>,
 }
 
 async fn generate_handler(State(state): State<AppState>, Json(payload): Json<GenerateRequest>) -> impl IntoResponse {
+    tracing::debug!("API Generate Request: {}", serde_json::to_string_pretty(&payload).unwrap_or_default());
     let config = state.config.read().await;
     
     // Check if workflow is active in config
@@ -202,7 +217,7 @@ async fn generate_handler(State(state): State<AppState>, Json(payload): Json<Gen
     }
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, serde::Serialize)]
 struct OpenAiImageRequest {
     prompt: String,
     model: Option<String>,
@@ -222,6 +237,7 @@ struct OpenAiImageData {
 }
 
 async fn openai_generate_handler(State(state): State<AppState>, Json(payload): Json<OpenAiImageRequest>) -> impl IntoResponse {
+    tracing::debug!("API OpenAI Request: {}", serde_json::to_string_pretty(&payload).unwrap_or_default());
     let config = state.config.read().await;
     
     if !config.enable_openai_compat {
@@ -362,6 +378,30 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
     }
 }
 
+async fn request_logger(
+    state: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> impl IntoResponse {
+    let method = state.method().clone();
+    let uri = state.uri().clone();
+    
+    // Get peer address from ConnectInfo
+    let peer_addr = state.extensions().get::<std::net::SocketAddr>().map(|a| a.to_string()).unwrap_or_else(|| "unknown".to_string());
+
+    let response = next.run(state).await;
+    let status = response.status();
+
+    tracing::info!(
+        "{} - \"{} {} HTTP/1.1 {}\"",
+        peer_addr,
+        method,
+        uri,
+        status
+    );
+
+    response
+}
+
 async fn health_check() -> &'static str {
     "OK"
 }
@@ -375,12 +415,18 @@ async fn shutdown_signal() {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
     let _ = dotenvy::dotenv(); // Load .env first so clap can pick up PORT
     let args = Args::parse();
 
+    let level = match args.log_level {
+        Some(LogLevel::Info) => tracing_subscriber::filter::LevelFilter::INFO,
+        Some(LogLevel::Debug) => tracing_subscriber::filter::LevelFilter::DEBUG,
+        None => tracing_subscriber::filter::LevelFilter::INFO,
+    };
+    tracing_subscriber::fmt().with_max_level(level).init();
+
     let config = config::load_config("config.toml");
-    let comfy_client = Arc::new(comfy::ComfyClient::new(config.comfyui_url.clone()));
+    let comfy_client = Arc::new(comfy::ComfyClient::new(config.comfyui_url.clone(), !args.no_log_workflow));
     
     let hash = std::env::var("DASHBOARD_PASSWORD_HASH").unwrap_or_default().trim().to_string();
     
@@ -402,6 +448,7 @@ async fn main() {
         .route("/api/login", post(login_handler))
         .route("/api/auth_check", get(check_auth_handler))
         .route("/api/restructure", post(restructure_handler))
+        .layer(axum::middleware::from_fn(request_logger))
         .with_state(state);
 
         // Add more API routes here
@@ -418,7 +465,7 @@ async fn main() {
     info!("Listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    axum::serve(listener, app)
+    axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
         .with_graceful_shutdown(shutdown_signal())
         .await
         .unwrap();
