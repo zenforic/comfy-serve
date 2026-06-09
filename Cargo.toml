@@ -2,6 +2,12 @@
 name = "comfy-serve"
 version = "0.1.0"
 edition = "2024"
+description = "A lightweight, API forwarding proxy for ComfyUI."
+readme = "README.md"
+license = "MIT"
+keywords = ["api", "comfyui", "comfy-ui", "http", "fastapi"]
+categories = ["api-bindings", "http-server", "command-line-utilities"]
+repository = "https://github.com/zenforic/"
 
 [dependencies]
 argon2 = "0.5.3"
@@ -23,3 +29,11 @@ toml = "1.1.2"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 uuid = { version = "1.23.2", features = ["v4"] }
+
+[profile.release]
+opt-level = 3
+strip = true
+lto = "thin"
+
+[package.metadata.docs.rs]
+default-target = "x86_64-unknown-linux-gnu"

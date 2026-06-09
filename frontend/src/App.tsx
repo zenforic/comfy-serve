@@ -547,7 +547,7 @@ function TestApiView({ config }: { config: any }) {
   -H "Content-Type: application/json"${authHeaderCurl} \\
   -d '${escapedCurlBody}'`;
 
-  const authHeaderPython = testApiKey ? `, "Authorization": f"Bearer {testApiKey}"` : "";
+  const authHeaderPython = testApiKey ? `, "Authorization": f"Bearer {api_key}"` : "";
   const pythonReq = `import requests
 
 url = "http://127.0.0.1:3000/api/generate"
