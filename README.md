@@ -44,9 +44,27 @@ To expose a ComfyUI workflow via the API:
 3. Place the JSON file into the `active-workflows/` directory in the `comfy-serve` root folder.
 4. Refresh the Comfy-Serve dashboard to see and map the new workflow!
 
+## Environment Configuration
+
+You can configure Comfy-Serve using a `.env` file in the root of the project.
+Create a `.env` file and define the following variables if needed:
+
+```env
+# The port the API and dashboard will run on (default is 3000)
+PORT=3000
+
+# The host IP the server will bind to (default is 127.0.0.1)
+HOST=0.0.0.0
+
+# Set a pre-hashed Argon2 password for dashboard authentication, otherwise it can be set at first run of the dashboard.
+DASHBOARD_PASSWORD_HASH=your_argon2_hash_here
+```
+
 ## CLI Options
 
 - `--dashboard`: Enables serving the React dashboard on `/`.
+- `--host <HOST>`: IP address to listen on (default: `127.0.0.1`).
+- `-p, --port <PORT>`: Port to listen on (default: `3000`).
 - `--log-level debug`: Enables verbose debugging logs.
 - `--no-log-workflow`: Disables logging of the full ComfyUI JSON payload to the console when in debug mode, keeping the console clean while still logging the incoming frontend parameters.
 

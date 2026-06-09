@@ -38,6 +38,10 @@ struct Args {
     #[arg(short, long, env = "PORT", default_value_t = 3000)]
     port: u16,
 
+    /// Host to listen on
+    #[arg(long, env = "HOST", default_value = "127.0.0.1")]
+    host: String,
+
     /// Log level: info or debug
     #[arg(short, long, value_enum)]
     log_level: Option<LogLevel>,
@@ -461,7 +465,8 @@ async fn main() {
         app = app.fallback(|| async { (StatusCode::NOT_FOUND, "Not Found") });
     }
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
+    let host_addr: std::net::IpAddr = args.host.parse().expect("Invalid IP address for --host");
+    let addr = SocketAddr::from((host_addr, args.port));
     info!("Listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
