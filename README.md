@@ -76,4 +76,4 @@ API_KEYS=sk-mysecretkey,sk-anotherkey
 MIT
 
 ## AI Disclosure
-Because this project can be used in situations where security matters, I am disclosing that the project was AI assisted. While the presence of `AGENTS.md` is usually a telling sign, full transparency is important in this case.
+Because this project can be used in situations where strong security matters (i.e. in cases where the server is exposed to the internet), I am explicitly disclosing that the project was AI assisted. While the presence of `AGENTS.md` is already usually a telling sign, full transparency is important in this case. I do have much pre-AI experience, but I am not confident enough in my ability to securely code http servers against attacks done the way they are nowadays.
