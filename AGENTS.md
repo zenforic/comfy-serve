@@ -23,6 +23,7 @@ This file serves as documentation for AI agents continuing work on the `comfy-se
 ## Working on the Frontend
 
 If you need to make changes to the dashboard UI:
+- **Theme Constraints**: The dashboard utilizes pre-defined CSS classes for interactive elements to maintain its custom styling. Avoid inline styles for buttons. Use `.accent-btn` for primary actions, `.secondary-btn` for standard actions, `.danger-btn` for destructive actions, and `.flat-btn` for text-only/tab buttons.
 1. Navigate to `frontend/`.
 2. Run `npm run dev` to test your changes independently (you will need to mock API responses if the backend is not running or proxy the Vite server).
 3. **CRITICAL**: When you are done editing the frontend, you **MUST** run `npm run build` inside `frontend/`. If you don't build the frontend, `rust-embed` will not pick up the changes during the Cargo build process, and the binary will contain outdated assets.
@@ -32,8 +33,8 @@ If you need to make changes to the dashboard UI:
 - `GET /api/workflows` - Returns a list of available workflow JSON files in `active-workflows/`.
 - `GET /api/config` - Returns the current `config.toml` layout.
 - `POST /api/config` - Overwrites `config.toml`.
-- `POST /api/generate` - The main custom generation endpoint.
-- `POST /v1/images/generations` - An OpenAI compatible endpoint mimicking DALL-E image generation requests. Maps the "prompt" to a specific field configured in the dashboard.
+- `POST /api/generate` - The main custom generation endpoint. (Secured by `Authorization: Bearer <key>` if `API_KEYS` is configured in `.env`)
+- `POST /v1/images/generations` - An OpenAI compatible endpoint mimicking DALL-E image generation requests. Maps the "prompt" to a specific field configured in the dashboard. (Secured by `Authorization: Bearer <key>` if `API_KEYS` is configured in `.env`)
 - `POST /api/login` - Authenticates a dashboard session.
 
 ## State Management

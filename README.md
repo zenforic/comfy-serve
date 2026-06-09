@@ -58,6 +58,10 @@ HOST=0.0.0.0
 
 # Set a pre-hashed Argon2 password for dashboard authentication, otherwise it can be set at first run of the dashboard.
 DASHBOARD_PASSWORD_HASH=your_argon2_hash_here
+
+# Optional: A comma-separated list of API keys required to hit the image generation endpoints.
+# If left blank or unset, the generation endpoints will remain open and unprotected.
+API_KEYS=sk-mysecretkey,sk-anotherkey
 ```
 
 ## CLI Options

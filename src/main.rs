@@ -61,6 +61,7 @@ struct AppState {
     comfy_client: Arc<comfy::ComfyClient>,
     dashboard_token: Arc<RwLock<Option<String>>>,
     password_hash: Arc<RwLock<String>>,
+    api_keys: Arc<Vec<String>>,
 }
 
 async fn list_workflows_handler(State(state): State<AppState>, headers: axum::http::HeaderMap) -> impl IntoResponse {
@@ -115,6 +116,7 @@ async fn login_handler(State(state): State<AppState>, Json(payload): Json<LoginR
         use std::io::Write;
         let mut file = std::fs::OpenOptions::new().create(true).append(true).open(".env").unwrap();
         writeln!(file, "DASHBOARD_PASSWORD_HASH='{}'", new_hash).unwrap();
+        writeln!(file, "API_KEYS=''").unwrap();
         *hash = new_hash.clone();
         
         // Also generate a token for session
@@ -150,7 +152,15 @@ struct GenerateRequest {
     params: std::collections::HashMap<String, serde_json::Value>,
 }
 
-async fn generate_handler(State(state): State<AppState>, Json(payload): Json<GenerateRequest>) -> impl IntoResponse {
+async fn generate_handler(State(state): State<AppState>, headers: axum::http::HeaderMap, Json(payload): Json<GenerateRequest>) -> impl IntoResponse {
+    if !state.api_keys.is_empty() {
+        let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok()).unwrap_or("");
+        let token = auth_header.replace("Bearer ", "");
+        if !state.api_keys.contains(&token) {
+            return (StatusCode::UNAUTHORIZED, "Invalid or missing API key").into_response();
+        }
+    }
+
     tracing::debug!("API Generate Request: {}", serde_json::to_string_pretty(&payload).unwrap_or_default());
     let config = state.config.read().await;
     
@@ -240,7 +250,15 @@ struct OpenAiImageData {
     url: Option<String>,
 }
 
-async fn openai_generate_handler(State(state): State<AppState>, Json(payload): Json<OpenAiImageRequest>) -> impl IntoResponse {
+async fn openai_generate_handler(State(state): State<AppState>, headers: axum::http::HeaderMap, Json(payload): Json<OpenAiImageRequest>) -> impl IntoResponse {
+    if !state.api_keys.is_empty() {
+        let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok()).unwrap_or("");
+        let token = auth_header.replace("Bearer ", "");
+        if !state.api_keys.contains(&token) {
+            return (StatusCode::UNAUTHORIZED, "Invalid or missing API key").into_response();
+        }
+    }
+
     tracing::debug!("API OpenAI Request: {}", serde_json::to_string_pretty(&payload).unwrap_or_default());
     let config = state.config.read().await;
     
@@ -434,11 +452,19 @@ async fn main() {
     
     let hash = std::env::var("DASHBOARD_PASSWORD_HASH").unwrap_or_default().trim().to_string();
     
+    let api_keys_env = std::env::var("API_KEYS").unwrap_or_default();
+    let api_keys: Vec<String> = api_keys_env
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    
     let state = AppState {
         config: Arc::new(RwLock::new(config)),
         comfy_client,
         dashboard_token: Arc::new(RwLock::new(None)),
         password_hash: Arc::new(RwLock::new(hash)),
+        api_keys: Arc::new(api_keys),
     };
 
     info!("Starting comfy-serve API server...");

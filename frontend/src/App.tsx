@@ -370,7 +370,7 @@ function WorkspaceEditor({ wf, wfJson, config, setConfig }: any) {
   return (
     <div style={{ display: 'flex', height: '100%', gap: 20 }}>
       {/* Left pane: Manual Mappings */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', padding: '4px' }}>
         <h2>Editing: {wf}</h2>
         <div style={{ marginTop: 20 }}>
           <button onClick={addExposedField} style={{ marginRight: 10 }}>+ Add Mapped Field (Manual)</button>
@@ -517,6 +517,7 @@ function TestApiView({ config }: { config: any }) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [resultImage, setResultImage] = useState<string | null>(null);
   const [resultError, setResultError] = useState<string | null>(null);
+  const [testApiKey, setTestApiKey] = useState('');
 
   if (!config || !config.workflows) {
     return <div style={{ padding: 20 }}>No config loaded.</div>;
@@ -540,10 +541,13 @@ function TestApiView({ config }: { config: any }) {
     params: params
   }, null, 4);
   const escapedCurlBody = curlBody.replace(/'/g, "'\\''");
+  
+  const authHeaderCurl = testApiKey ? ` \\\n  -H "Authorization: Bearer ${testApiKey}"` : "";
   const curlReq = `curl -X POST http://127.0.0.1:3000/api/generate \\
-  -H "Content-Type: application/json" \\
+  -H "Content-Type: application/json"${authHeaderCurl} \\
   -d '${escapedCurlBody}'`;
 
+  const authHeaderPython = testApiKey ? `, "Authorization": f"Bearer {testApiKey}"` : "";
   const pythonReq = `import requests
 
 url = "http://127.0.0.1:3000/api/generate"
@@ -551,8 +555,8 @@ data = '''${JSON.stringify({
     workflow: selectedWf,
     params: params
 }, null, 4)}'''
-
-response = requests.post(url, data=data, headers={"Content-Type": "application/json"})
+${testApiKey ? `\napi_key = "${testApiKey}"` : ""}
+response = requests.post(url, data=data, headers={"Content-Type": "application/json"${authHeaderPython}})
 
 with open("output.png", "wb") as f:
     f.write(response.content)
@@ -562,10 +566,16 @@ with open("output.png", "wb") as f:
     setIsGenerating(true);
     setResultImage(null);
     setResultError(null);
+    
+    const headers: any = { 'Content-Type': 'application/json' };
+    if (testApiKey) {
+      headers['Authorization'] = `Bearer ${testApiKey}`;
+    }
+
     try {
       const res = await fetch('/api/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ workflow: selectedWf, params })
       });
       if (!res.ok) {
@@ -583,8 +593,20 @@ with open("output.png", "wb") as f:
 
   return (
     <div style={{ padding: 40, display: 'flex', gap: 40, height: '100%', overflowY: 'auto', boxSizing: 'border-box' }}>
-      <div style={{ flex: 1 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
         <h2 style={{ marginBottom: 20 }}>Test API Endpoints</h2>
+        
+        <div className="form-group" style={{ marginBottom: 15 }}>
+          <label>API Key (Optional)</label>
+          <input 
+            type="password" 
+            value={testApiKey} 
+            onChange={e => setTestApiKey(e.target.value)}
+            placeholder="sk-..."
+            style={{ width: '100%', padding: 10, backgroundColor: '#15151e', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: 4 }}
+          />
+        </div>
+
         <div className="form-group" style={{ marginBottom: 30 }}>
           <label>Target Workflow</label>
           <select 
@@ -635,7 +657,7 @@ with open("output.png", "wb") as f:
         )}
       </div>
       
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         {resultError && (
           <div style={{ padding: 15, backgroundColor: 'var(--danger)', color: 'white', borderRadius: 8, marginBottom: 20, fontSize: 14 }}>
             <strong>Error:</strong> {resultError}
@@ -664,7 +686,7 @@ with open("output.png", "wb") as f:
           </button>
         </div>
 
-        <pre style={{ backgroundColor: '#1d1d26', padding: 20, borderRadius: 8, overflowX: 'auto', flex: 1, border: '1px solid var(--border-color)', margin: 0, fontSize: 13, lineHeight: '1.5' }}>
+        <pre style={{ backgroundColor: '#1d1d26', padding: 20, borderRadius: 8, overflowX: 'auto', flex: 1, border: '1px solid var(--border-color)', margin: 0, fontSize: 13, lineHeight: '1.5', whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>
           <code>
             {activeTab === 'curl' ? curlReq : pythonReq}
           </code>
