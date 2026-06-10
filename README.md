@@ -1,6 +1,6 @@
 # Comfy-Serve
 
-Comfy-Serve is a high-performance Rust proxy server and React dashboard designed to seamlessly interface with a local or remote [ComfyUI](https://github.com/comfyanonymous/ComfyUI) instance. It provides an intuitive GUI workspace to expose and map specific ComfyUI workflow parameters to simple REST API endpoints, including an OpenAI-compatible `/v1/images/generations` route.
+Comfy-Serve is a high-performance Rust proxy server and React dashboard designed to seamlessly interface with a local or remote [ComfyUI](https://github.com/Comfy-Org/ComfyUI) instance. It provides an intuitive GUI workspace to expose and map specific ComfyUI workflow parameters to simple REST API endpoints, including an OpenAI-compatible `/v1/images/generations` route.
 
 ## Features
 
@@ -17,7 +17,20 @@ Comfy-Serve is a high-performance Rust proxy server and React dashboard designed
 - [Node.js](https://nodejs.org/) & npm (for building the frontend dashboard)
 - A running ComfyUI instance (default assumes `http://127.0.0.1:8188`)
 
-### Building and Running
+### Installation
+
+**1. Pre-built Binaries (Recommended)**
+You can download pre-built binaries for Windows and Linux from the [GitHub Releases](https://github.com/zenforic/comfy-serve/releases). These binaries come with the compiled React dashboard out of the box.
+
+**2. Install via Crates.io**
+If you want to install Comfy-Serve globally via Cargo, you can install it directly from crates.io. 
+*Note: Because the crate does not ship with the compiled React frontend assets, you must install the headless version (without the dashboard) by disabling default features.*
+```bash
+cargo install comfy-serve --no-default-features
+```
+To install with the dashboard from source, see the instructions below.
+
+### Building and Running from Source
 
 1. **Build the Frontend**:
    ```bash

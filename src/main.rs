@@ -3,16 +3,19 @@ mod auth;
 mod comfy;
 mod llm;
 
+#[cfg(feature = "dashboard")]
+use axum::http::Uri;
 use axum::{
     routing::{get, post},
     Router,
     response::{IntoResponse, Response},
-    http::{StatusCode, Uri, header},
+    http::{StatusCode, header},
     body::Body,
     extract::State,
     Json,
 };
 use clap::Parser;
+#[cfg(feature = "dashboard")]
 use rust_embed::RustEmbed;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -51,6 +54,7 @@ struct Args {
     no_log_workflow: bool,
 }
 
+#[cfg(feature = "dashboard")]
 #[derive(RustEmbed)]
 #[folder = "frontend/dist"]
 struct FrontendAssets;
@@ -364,6 +368,7 @@ async fn restructure_handler(State(state): State<AppState>, headers: axum::http:
     }
 }
 
+#[cfg(feature = "dashboard")]
 async fn static_handler(uri: Uri) -> impl IntoResponse {
     let mut path = uri.path().trim_start_matches('/').to_string();
 
@@ -484,9 +489,17 @@ async fn main() {
         // Add more API routes here
 
     if args.dashboard {
-        info!("Dashboard enabled. Serving on /");
-        // Serve static assets via fallback so it doesn't conflict with API
-        app = app.fallback(static_handler);
+        #[cfg(feature = "dashboard")]
+        {
+            info!("Dashboard enabled. Serving on /");
+            // Serve static assets via fallback so it doesn't conflict with API
+            app = app.fallback(static_handler);
+        }
+        #[cfg(not(feature = "dashboard"))]
+        {
+            tracing::warn!("Dashboard was requested via --dashboard, but the binary was not compiled with the 'dashboard' feature.");
+            app = app.fallback(|| async { (StatusCode::NOT_FOUND, "Dashboard feature disabled at compile time") });
+        }
     } else {
         app = app.fallback(|| async { (StatusCode::NOT_FOUND, "Not Found") });
     }

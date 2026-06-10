@@ -7,7 +7,7 @@ readme = "README.md"
 license = "MIT"
 keywords = ["api", "comfyui", "comfy-ui", "http", "fastapi"]
 categories = ["api-bindings", "http-server", "command-line-utilities"]
-repository = "https://github.com/zenforic/"
+repository = "https://github.com/zenforic/comfy-serve"
 
 [dependencies]
 argon2 = "0.5.3"
@@ -16,11 +16,11 @@ base64 = "0.22.1"
 clap = { version = "4.6.1", features = ["derive", "env"] }
 dotenvy = "0.15.7"
 futures-util = "0.3.32"
-mime_guess = "2.0.5"
+mime_guess = { version = "2.0.5", optional = true }
 rand = "0.10.1"
 rand_core = { version = "0.6.4", features = ["getrandom"] }
 reqwest = { version = "0.13.4", features = ["json"] }
-rust-embed = { version = "8.11.0", features = ["mime-guess"] }
+rust-embed = { version = "8.11.0", features = ["mime-guess"], optional = true }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 tokio = { version = "1.52.3", features = ["full"] }
@@ -37,3 +37,7 @@ lto = "thin"
 
 [package.metadata.docs.rs]
 default-target = "x86_64-unknown-linux-gnu"
+
+[features]
+default = ["dashboard"]
+dashboard = ["dep:rust-embed", "dep:mime_guess"]

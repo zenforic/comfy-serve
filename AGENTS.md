@@ -54,6 +54,12 @@ The dashboard allows automated field extraction using an OpenAI-compatible endpo
 - Accepts a workflow JSON and user prompt, and wraps it in a strict system prompt demanding a JSON array matching the `WorkflowFieldMap` layout.
 - The user can optionally override the target Model string from the popup. If left blank in the onboarding config, the `model` parameter is intentionally omitted from the HTTP request to maximize compatibility with local servers like vLLM.
 
+## Cargo Features
+
+The frontend dashboard is optionally compiled into the binary via the `dashboard` Cargo feature (which is enabled by default in `Cargo.toml`).
+- **Pristine Builds / Crates.io**: If you need to build or publish the crate in a pristine state without the pre-compiled frontend assets (e.g. for `cargo publish` or `cargo install`), you must disable the default features: `cargo build --no-default-features`.
+- **Pre-built Binaries**: When building for GitHub releases, standard `cargo build --release` includes the dashboard assets since `dashboard` is a default feature.
+
 ## CLI Arguments
 
 - `--log-level debug`: Enables verbose debugging logs.
