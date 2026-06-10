@@ -16,5 +16,14 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Build
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+    - name: Build frontend
+      run: |
+        cd frontend
+        npm install
+        npm run build
+    - name: Build backend
       run: cargo build --verbose
