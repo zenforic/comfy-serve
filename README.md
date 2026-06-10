@@ -77,6 +77,48 @@ DASHBOARD_PASSWORD_HASH=your_argon2_hash_here
 API_KEYS=sk-mysecretkey,sk-anotherkey
 ```
 
+## Manual Configuration (`config.toml`)
+
+If you are running the headless version or prefer to configure the server manually without using the dashboard, you can create or edit the `config.toml` file in the root of the project.
+
+Here is an example `config.toml` layout:
+
+```toml
+comfyui_url = "http://127.0.0.1:8188"
+enable_openai_compat = true
+
+# Optional: Configuration for LLM Assisted Restructuring (OpenAI-compatible only)
+[llm]
+base_url = "https://api.openai.com/v1"
+model = "gpt-4o"
+api_key = "sk-..."
+
+# Define your active workflows
+[workflows."my-workflow.json"]
+active = true
+file_name = "my-workflow.json"
+
+# Map a specific ComfyUI node field to a simple API parameter
+[[workflows."my-workflow.json".exposed_fields]]
+original_node_id = "3"
+original_field_name = "text"
+exposed_as = "prompt"
+required = true
+is_value_map = false
+map_keys = ""
+map_values = ""
+
+# Example of mapping boolean values to specific node numerical values
+[[workflows."my-workflow.json".exposed_fields]]
+original_node_id = "5"
+original_field_name = "value"
+exposed_as = "turbo"
+required = false
+is_value_map = true
+map_keys = "true,false"
+map_values = "0,0.9"
+```
+
 ## CLI Options
 
 - `--dashboard`: Enables serving the React dashboard on `/`.
