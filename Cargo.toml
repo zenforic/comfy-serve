@@ -6,7 +6,7 @@ description = "A lightweight, API forwarding proxy for ComfyUI."
 readme = "README.md"
 license = "MIT"
 keywords = ["api", "comfyui", "comfy-ui", "http", "fastapi"]
-categories = ["api-bindings", "http-server", "command-line-utilities"]
+categories = ["api-bindings", "command-line-utilities", "web-programming::http-server", "web-programming::http-client"]
 repository = "https://github.com/zenforic/comfy-serve"
 
 [dependencies]
