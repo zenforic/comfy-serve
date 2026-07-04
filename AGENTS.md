@@ -30,7 +30,9 @@ If you need to make changes to the dashboard UI:
 
 ## API Endpoints
 
-- `GET /api/workflows` - Returns a list of available workflow JSON files in `active-workflows/`.
+- `GET /api/workflows` - Returns a list of available workflow JSON files in `active-workflows/`. (Dashboard only)
+- `GET /api/models` - Returns a list of active configured workflows and their exposed parameters. (Secured by `Authorization: Bearer <key>` if `API_KEYS` is configured in `.env`)
+- `GET /v1/models` - OpenAI compatible endpoint returning a list of active workflows as available models. (Secured by `Authorization: Bearer <key>` if `API_KEYS` is configured in `.env`)
 - `GET /api/config` - Returns the current `config.toml` layout.
 - `POST /api/config` - Overwrites `config.toml`.
 - `POST /api/generate` - The main custom generation endpoint. (Secured by `Authorization: Bearer <key>` if `API_KEYS` is configured in `.env`)

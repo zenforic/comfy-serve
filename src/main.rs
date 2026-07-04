@@ -325,6 +325,98 @@ async fn openai_generate_handler(State(state): State<AppState>, headers: axum::h
     }
 }
 
+#[derive(serde::Serialize)]
+struct OpenAiModelListResponse {
+    object: String,
+    data: Vec<OpenAiModel>,
+}
+
+#[derive(serde::Serialize)]
+struct OpenAiModel {
+    id: String,
+    object: String,
+    created: u64,
+    owned_by: String,
+}
+
+async fn openai_models_handler(State(state): State<AppState>, headers: axum::http::HeaderMap) -> impl IntoResponse {
+    if !state.api_keys.is_empty() {
+        let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok()).unwrap_or("");
+        let token = auth_header.replace("Bearer ", "");
+        if !state.api_keys.contains(&token) {
+            return (StatusCode::UNAUTHORIZED, "Invalid or missing API key").into_response();
+        }
+    }
+
+    let config = state.config.read().await;
+    
+    if !config.enable_openai_compat {
+        return (StatusCode::FORBIDDEN, "OpenAI compat is disabled").into_response();
+    }
+
+    let workflows = match comfy::get_workflows() {
+        Ok(w) => w,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load workflows").into_response(),
+    };
+
+    let mut models = Vec::new();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+
+    for (name, c) in &config.workflows {
+        if c.active && workflows.contains_key(name) {
+            models.push(OpenAiModel {
+                id: name.clone(),
+                object: "model".to_string(),
+                created: now,
+                owned_by: "comfy-serve".to_string(),
+            });
+        }
+    }
+
+    let res = OpenAiModelListResponse {
+        object: "list".to_string(),
+        data: models,
+    };
+
+    (StatusCode::OK, Json(res)).into_response()
+}
+
+#[derive(serde::Serialize)]
+struct NativeModelInfo {
+    id: String,
+    fields: Vec<crate::config::WorkflowFieldMap>,
+}
+
+async fn native_models_handler(State(state): State<AppState>, headers: axum::http::HeaderMap) -> impl IntoResponse {
+    if !state.api_keys.is_empty() {
+        let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok()).unwrap_or("");
+        let token = auth_header.replace("Bearer ", "");
+        if !state.api_keys.contains(&token) {
+            return (StatusCode::UNAUTHORIZED, "Invalid or missing API key").into_response();
+        }
+    }
+
+    let config = state.config.read().await;
+    
+    let workflows = match comfy::get_workflows() {
+        Ok(w) => w,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load workflows").into_response(),
+    };
+
+    let mut models = Vec::new();
+
+    for (name, c) in &config.workflows {
+        if c.active && workflows.contains_key(name) {
+            models.push(NativeModelInfo {
+                id: name.clone(),
+                fields: c.exposed_fields.clone(),
+            });
+        }
+    }
+
+    (StatusCode::OK, Json(models)).into_response()
+}
+
 #[derive(serde::Deserialize)]
 struct RestructureRequest {
     workflow: String,
@@ -477,9 +569,11 @@ async fn main() {
     let mut app = Router::new()
         .route("/api/health", get(health_check))
         .route("/api/workflows", get(list_workflows_handler))
+        .route("/api/models", get(native_models_handler))
         .route("/api/config", get(get_config_handler).post(update_config_handler))
         .route("/api/generate", post(generate_handler))
         .route("/v1/images/generations", post(openai_generate_handler))
+        .route("/v1/models", get(openai_models_handler))
         .route("/api/login", post(login_handler))
         .route("/api/auth_check", get(check_auth_handler))
         .route("/api/restructure", post(restructure_handler))

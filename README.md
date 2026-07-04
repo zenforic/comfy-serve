@@ -57,6 +57,13 @@ To expose a ComfyUI workflow via the API:
 3. Place the JSON file into the `active-workflows/` directory in the `comfy-serve` root folder.
 4. Refresh the Comfy-Serve dashboard to see and map the new workflow!
 
+## API Endpoints
+
+- `GET /api/models` - Lists active configured workflows and their required parameters.
+- `POST /api/generate` - The main custom image generation endpoint.
+- `GET /v1/models` - OpenAI compatible endpoint returning a list of active workflows as available models.
+- `POST /v1/images/generations` - OpenAI compatible endpoint mimicking DALL-E image generation requests.
+
 ## Environment Configuration
 
 You can configure Comfy-Serve using a `.env` file in the root of the project.
