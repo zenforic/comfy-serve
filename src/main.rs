@@ -632,6 +632,97 @@ async fn openai_models_handler(State(state): State<AppState>, headers: axum::htt
     (StatusCode::OK, Json(res)).into_response()
 }
 
+async fn openapi_spec_handler(State(state): State<AppState>, headers: axum::http::HeaderMap) -> impl IntoResponse {
+    if !state.api_keys.is_empty() {
+        let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok()).unwrap_or("");
+        let token = auth_header.replace("Bearer ", "");
+        if !state.api_keys.contains(&token) {
+            return (StatusCode::UNAUTHORIZED, "Invalid or missing API key").into_response();
+        }
+    }
+
+    let config = state.config.read().await;
+    
+    if !config.enable_openai_compat {
+        return (StatusCode::FORBIDDEN, "OpenAI compat is disabled").into_response();
+    }
+
+    let spec = serde_json::json!({
+        "openapi": "3.0.0",
+        "info": {
+            "title": "comfy-serve OpenAI Compatible API",
+            "version": "1.0.0",
+            "description": "OpenAI compatible endpoints mapping to ComfyUI Workflows"
+        },
+        "servers": [
+            {
+                "url": "/v1"
+            }
+        ],
+        "paths": {
+            "/models": {
+                "get": {
+                    "summary": "List available models (workflows)",
+                    "responses": {
+                        "200": {
+                            "description": "Successful response"
+                        }
+                    }
+                }
+            },
+            "/images/generations": {
+                "post": {
+                    "summary": "Create image from prompt",
+                    "requestBody": {
+                        "required": true,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "prompt": { "type": "string" },
+                                        "model": { "type": "string" }
+                                    },
+                                    "required": ["prompt"]
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": { "description": "Successful image generation" }
+                    }
+                }
+            },
+            "/images/edits": {
+                "post": {
+                    "summary": "Edit or create image from multipart form data",
+                    "requestBody": {
+                        "required": true,
+                        "content": {
+                            "multipart/form-data": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "prompt": { "type": "string" },
+                                        "image": { "type": "string", "format": "binary" },
+                                        "model": { "type": "string" }
+                                    },
+                                    "required": ["prompt", "image"]
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": { "description": "Successful image edit" }
+                    }
+                }
+            }
+        }
+    });
+
+    (StatusCode::OK, Json(spec)).into_response()
+}
+
 #[derive(serde::Serialize)]
 struct NativeModelInfo {
     id: String,
@@ -859,6 +950,7 @@ async fn main() {
         .route("/v1/images/generations", post(openai_generate_handler))
         .route("/v1/images/edits", post(openai_edits_handler))
         .route("/v1/models", get(openai_models_handler))
+        .route("/v1/openapi.json", get(openapi_spec_handler))
         .route("/api/login", post(login_handler))
         .route("/api/auth_check", get(check_auth_handler))
         .route("/api/restructure", post(restructure_handler))
