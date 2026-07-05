@@ -26,4 +26,4 @@ jobs:
         npm install
         npm run build
     - name: Build backend
-      run: cargo build --verbose
+      run: cargo test --verbose
