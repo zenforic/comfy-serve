@@ -298,6 +298,7 @@ function WorkspaceEditor({ wf, wfJson, config, setConfig }: any) {
   const [showPopup, setShowPopup] = useState(false);
   const [llmPrompt, setLlmPrompt] = useState("Analyze this workflow and expose the fields that control prompt, CFG scale, steps, and random seed.");
   const [llmModelOverride, setLlmModelOverride] = useState("");
+  const [isRestructuring, setIsRestructuring] = useState(false);
   
   // JSON stringified state for the right panel editor
   const [jsonText, setJsonText] = useState(JSON.stringify(wfJson || {}, null, 2) || "");
@@ -331,6 +332,7 @@ function WorkspaceEditor({ wf, wfJson, config, setConfig }: any) {
   };
 
   const handleAssistedRestructure = async () => {
+    setIsRestructuring(true);
     try {
       const token = localStorage.getItem('token');
       const res = await fetch('/api/restructure', {
@@ -365,6 +367,8 @@ function WorkspaceEditor({ wf, wfJson, config, setConfig }: any) {
       alert("Restructure mapping successful! Check your left panel.");
     } catch (e: any) {
       alert(`Error calling restructure: ${e.message}`);
+    } finally {
+      setIsRestructuring(false);
     }
   };
 
@@ -518,8 +522,14 @@ function WorkspaceEditor({ wf, wfJson, config, setConfig }: any) {
               style={{ width: '100%', height: 120, padding: 10, backgroundColor: '#15151e', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: 4, marginBottom: 15, fontFamily: 'inherit' }}
             />
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button className="secondary-btn" onClick={() => setShowPopup(false)}>Cancel</button>
-              <button onClick={handleAssistedRestructure}>Submit to LLM</button>
+              <button className="secondary-btn" onClick={() => setShowPopup(false)} disabled={isRestructuring}>Cancel</button>
+              <button 
+                onClick={handleAssistedRestructure} 
+                disabled={isRestructuring}
+                className={isRestructuring ? "secondary-btn" : "accent-btn"}
+              >
+                {isRestructuring ? 'Processing...' : 'Submit to LLM'}
+              </button>
             </div>
           </div>
         </div>
