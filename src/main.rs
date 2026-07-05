@@ -447,7 +447,7 @@ async fn openai_generate_handler(State(state): State<AppState>, headers: axum::h
 async fn openai_edits_handler(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
-    mut multipart: axum::extract::Multipart,
+    bytes: axum::body::Bytes,
 ) -> impl IntoResponse {
     if !state.api_keys.is_empty() {
         let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok()).unwrap_or("");
@@ -462,18 +462,31 @@ async fn openai_edits_handler(
         return (StatusCode::FORBIDDEN, "OpenAI compat is disabled").into_response();
     }
 
+    let content_type = headers.get(axum::http::header::CONTENT_TYPE)
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+        
+    let boundary = if let Some(idx) = content_type.find("boundary=") {
+        content_type[idx + 9..].trim().to_string()
+    } else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": {"message": "Missing boundary in content-type", "type": "invalid_request_error"}}))
+        ).into_response();
+    };
+
     let mut prompt: Option<String> = None;
     let mut image_bytes: Option<Vec<u8>> = None;
     let mut model: Option<String> = None;
     
-    while let Some(field) = multipart.next_field().await.unwrap_or(None) {
-        let name = field.name().unwrap_or("").to_string();
+    let parts = parse_lenient_multipart(&bytes, &boundary);
+    for (name, _filename, data) in parts {
         if name == "prompt" {
-            prompt = field.text().await.ok();
+            prompt = String::from_utf8(data).ok();
         } else if name == "image" || name == "image[]" {
-            image_bytes = field.bytes().await.map(|b| b.to_vec()).ok();
+            image_bytes = Some(data);
         } else if name == "model" {
-            model = field.text().await.ok();
+            model = String::from_utf8(data).ok();
         }
     }
     
@@ -862,6 +875,79 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
     }
 }
 
+fn parse_lenient_multipart(body: &[u8], boundary: &str) -> Vec<(String, Option<String>, Vec<u8>)> {
+    let mut parts = Vec::new();
+    let boundary_bytes = format!("--{}", boundary).into_bytes();
+    
+    let mut positions = Vec::new();
+    let mut i = 0;
+    while i < body.len() {
+        if body[i..].starts_with(&boundary_bytes) {
+            positions.push(i);
+            i += boundary_bytes.len();
+        } else {
+            i += 1;
+        }
+    }
+
+    for window in positions.windows(2) {
+        let start = window[0] + boundary_bytes.len();
+        let end = window[1];
+        
+        let mut part_data = &body[start..end];
+        
+        while part_data.starts_with(b"\r") || part_data.starts_with(b"\n") {
+            part_data = &part_data[1..];
+        }
+        while part_data.ends_with(b"\r") || part_data.ends_with(b"\n") {
+            part_data = &part_data[..part_data.len()-1];
+        }
+
+        let headers_end;
+        let data_start;
+        
+        if let Some(pos) = part_data.windows(4).position(|w| w == b"\r\n\r\n") {
+            headers_end = pos;
+            data_start = pos + 4;
+        } else if let Some(pos) = part_data.windows(2).position(|w| w == b"\n\n") {
+            headers_end = pos;
+            data_start = pos + 2;
+        } else {
+            continue;
+        }
+
+        let headers_str = String::from_utf8_lossy(&part_data[..headers_end]);
+        let data = &part_data[data_start..];
+
+        let mut name = String::new();
+        let mut filename = None;
+
+        for line in headers_str.lines() {
+            let line = line.trim();
+            if line.to_lowercase().starts_with("content-disposition:") {
+                if let Some(name_idx) = line.find("name=\"") {
+                    let rest = &line[name_idx + 6..];
+                    if let Some(end_idx) = rest.find("\"") {
+                        name = rest[..end_idx].to_string();
+                    }
+                }
+                if let Some(fname_idx) = line.find("filename=\"") {
+                    let rest = &line[fname_idx + 10..];
+                    if let Some(end_idx) = rest.find("\"") {
+                        filename = Some(rest[..end_idx].to_string());
+                    }
+                }
+            }
+        }
+
+        if !name.is_empty() {
+            parts.push((name, filename, data.to_vec()));
+        }
+    }
+    
+    parts
+}
+
 async fn request_logger(
     State(app_state): State<AppState>,
     state: axum::extract::Request,
@@ -923,61 +1009,49 @@ async fn request_logger(
 
         let body_str = if is_debug {
             if is_multipart && !app_state.log_expand_binary {
-                let temp_req = axum::extract::Request::from_parts(parts.clone(), axum::body::Body::from(bytes.clone()));
-                let mut summary = String::new();
                 let current_ct = parts.headers.get(axum::http::header::CONTENT_TYPE)
                     .and_then(|h| h.to_str().ok())
                     .unwrap_or(&content_type);
+                
+                let boundary = if let Some(idx) = current_ct.find("boundary=") {
+                    current_ct[idx + 9..].trim().to_string()
+                } else {
+                    "".to_string()
+                };
+
+                let mut summary = String::new();
                 summary.push_str(&format!("Multipart Payload (Content-Type: {}, Size: {} bytes):\n", current_ct, bytes.len()));
                 
-                use axum::extract::FromRequest;
-                match axum::extract::Multipart::from_request(temp_req, &()).await {
-                    Ok(mut multipart) => {
-                        loop {
-                            match multipart.next_field().await {
-                                Ok(Some(field)) => {
-                                    let name = field.name().unwrap_or("unknown").to_string();
-                                    let f_ct = field.content_type().unwrap_or("text/plain").to_string();
-                                    let has_file = field.file_name().is_some();
-                                    
-                                    if f_ct.starts_with("image/") || f_ct.starts_with("application/octet-stream") || has_file {
-                                        summary.push_str(&format!("  - {}: [binary data {}]\n", name, f_ct));
-                                    } else {
-                                        if let Ok(text) = field.text().await {
-                                            summary.push_str(&format!("  - {}: {}\n", name, text));
-                                        } else {
-                                            summary.push_str(&format!("  - {}: [unparseable text]\n", name));
-                                        }
-                                    }
-                                }
-                                Ok(None) => break,
-                                Err(e) => {
-                                    summary.push_str(&format!("  [Error reading next field: {:?}]\n", e));
-                                    let len = bytes.len();
-                                    let start = String::from_utf8_lossy(&bytes[..std::cmp::min(500, len)]);
-                                    let end = if len > 500 {
-                                        String::from_utf8_lossy(&bytes[len - 500..])
-                                    } else {
-                                        std::borrow::Cow::Borrowed("")
-                                    };
-                                    summary.push_str(&format!("  [Raw Body Start]:\n{}\n", start));
-                                    summary.push_str(&format!("  [Raw Body End]:\n{}\n", end));
-                                    break;
-                                }
+                let parsed_parts = parse_lenient_multipart(&bytes, &boundary);
+                if parsed_parts.is_empty() {
+                    summary.push_str("  [Warning: No fields found or failed to parse. Lenient parser returned 0 parts.]\n");
+                    let len = bytes.len();
+                    let start = String::from_utf8_lossy(&bytes[..std::cmp::min(500, len)]);
+                    let end = if len > 500 {
+                        String::from_utf8_lossy(&bytes[len - 500..])
+                    } else {
+                        std::borrow::Cow::Borrowed("")
+                    };
+                    summary.push_str(&format!("  [Raw Body Start]:\n{}\n", start));
+                    summary.push_str(&format!("  [Raw Body End]:\n{}\n", end));
+                } else {
+                    for (name, filename, data) in parsed_parts {
+                        let has_file = filename.is_some();
+                        let mut is_text = false;
+                        let mut text_val = String::new();
+                        
+                        if !has_file {
+                            if let Ok(text) = String::from_utf8(data.clone()) {
+                                is_text = true;
+                                text_val = text;
                             }
                         }
-                    }
-                    Err(e) => {
-                        summary.push_str(&format!("  [Failed to parse multipart: {:?}]\n", e));
-                        let len = bytes.len();
-                        let start = String::from_utf8_lossy(&bytes[..std::cmp::min(500, len)]);
-                        let end = if len > 500 {
-                            String::from_utf8_lossy(&bytes[len - 500..])
+                        
+                        if is_text {
+                            summary.push_str(&format!("  - {}: {}\n", name, text_val));
                         } else {
-                            std::borrow::Cow::Borrowed("")
-                        };
-                        summary.push_str(&format!("  [Raw Body Start]:\n{}\n", start));
-                        summary.push_str(&format!("  [Raw Body End]:\n{}\n", end));
+                            summary.push_str(&format!("  - {}: [binary data]\n", name));
+                        }
                     }
                 }
                 Some(summary)
