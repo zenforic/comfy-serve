@@ -66,7 +66,8 @@ To expose a ComfyUI workflow via the API:
 You can use standard OpenAI client libraries to interface with `comfy-serve` by pointing the base URL to your `comfy-serve` instance.
 
 - **`GET /v1/models`**: Returns all active workflows as available models.
-- **`POST /v1/images/generations`** and **`POST /v1/images/edits`**: Acts as a drop-in replacement for DALL-E. The requested `prompt` text string will be forwarded to whichever node you exposed as `prompt`.
+- **`POST /v1/images/generations`**: Acts as a drop-in replacement for DALL-E generation. Maps the requested `prompt` JSON string to whichever node you exposed as `prompt`.
+- **`POST /v1/images/edits`**: Acts as a drop-in replacement for DALL-E editing. Accepts `multipart/form-data` uploads, mapping the `prompt` string to the `prompt` node, and the `image` file binary to the `image` node.
 
 ## Environment Configuration
 
