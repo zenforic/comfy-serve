@@ -470,7 +470,7 @@ async fn openai_edits_handler(
         let name = field.name().unwrap_or("").to_string();
         if name == "prompt" {
             prompt = field.text().await.ok();
-        } else if name == "image" {
+        } else if name == "image" || name == "image[]" {
             image_bytes = field.bytes().await.map(|b| b.to_vec()).ok();
         } else if name == "model" {
             model = field.text().await.ok();
@@ -479,12 +479,18 @@ async fn openai_edits_handler(
     
     let prompt = match prompt {
         Some(p) => p,
-        None => return (StatusCode::BAD_REQUEST, "Missing prompt field").into_response(),
+        None => return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": {"message": "Missing prompt field", "type": "invalid_request_error"}}))
+        ).into_response(),
     };
     
     let image_bytes = match image_bytes {
         Some(b) => b,
-        None => return (StatusCode::BAD_REQUEST, "Missing image field").into_response(),
+        None => return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": {"message": "Missing image field", "type": "invalid_request_error"}}))
+        ).into_response(),
     };
 
     let mut target_workflow = if let Some(m) = model {
