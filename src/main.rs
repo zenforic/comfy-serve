@@ -891,23 +891,32 @@ async fn request_logger(
             
             let temp_req = axum::extract::Request::from_parts(parts.clone(), axum::body::Body::from(bytes.clone()));
             let mut summary = String::new();
-            summary.push_str("Multipart Payload:\n");
+            summary.push_str(&format!("Multipart Payload (Content-Type: {}, Size: {} bytes):\n", content_type, bytes.len()));
             
             use axum::extract::FromRequest;
             match axum::extract::Multipart::from_request(temp_req, &()).await {
                 Ok(mut multipart) => {
-                    while let Ok(Some(field)) = multipart.next_field().await {
-                        let name = field.name().unwrap_or("unknown").to_string();
-                        let f_ct = field.content_type().unwrap_or("text/plain").to_string();
-                        let has_file = field.file_name().is_some();
-                        
-                        if f_ct.starts_with("image/") || f_ct.starts_with("application/octet-stream") || has_file {
-                            summary.push_str(&format!("  - {}: [binary data {}]\n", name, f_ct));
-                        } else {
-                            if let Ok(text) = field.text().await {
-                                summary.push_str(&format!("  - {}: {}\n", name, text));
-                            } else {
-                                summary.push_str(&format!("  - {}: [unparseable text]\n", name));
+                    loop {
+                        match multipart.next_field().await {
+                            Ok(Some(field)) => {
+                                let name = field.name().unwrap_or("unknown").to_string();
+                                let f_ct = field.content_type().unwrap_or("text/plain").to_string();
+                                let has_file = field.file_name().is_some();
+                                
+                                if f_ct.starts_with("image/") || f_ct.starts_with("application/octet-stream") || has_file {
+                                    summary.push_str(&format!("  - {}: [binary data {}]\n", name, f_ct));
+                                } else {
+                                    if let Ok(text) = field.text().await {
+                                        summary.push_str(&format!("  - {}: {}\n", name, text));
+                                    } else {
+                                        summary.push_str(&format!("  - {}: [unparseable text]\n", name));
+                                    }
+                                }
+                            }
+                            Ok(None) => break,
+                            Err(e) => {
+                                summary.push_str(&format!("  [Error reading next field: {}]\n", e));
+                                break;
                             }
                         }
                     }
