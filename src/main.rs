@@ -952,7 +952,7 @@ async fn request_logger(
                                 }
                                 Ok(None) => break,
                                 Err(e) => {
-                                    summary.push_str(&format!("  [Error reading next field: {}]\n", e));
+                                    summary.push_str(&format!("  [Error reading next field: {:?}]\n", e));
                                     let len = bytes.len();
                                     let start = String::from_utf8_lossy(&bytes[..std::cmp::min(500, len)]);
                                     let end = if len > 500 {
@@ -968,7 +968,16 @@ async fn request_logger(
                         }
                     }
                     Err(e) => {
-                        summary.push_str(&format!("  [Failed to parse multipart: {}]\n", e));
+                        summary.push_str(&format!("  [Failed to parse multipart: {:?}]\n", e));
+                        let len = bytes.len();
+                        let start = String::from_utf8_lossy(&bytes[..std::cmp::min(500, len)]);
+                        let end = if len > 500 {
+                            String::from_utf8_lossy(&bytes[len - 500..])
+                        } else {
+                            std::borrow::Cow::Borrowed("")
+                        };
+                        summary.push_str(&format!("  [Raw Body Start]:\n{}\n", start));
+                        summary.push_str(&format!("  [Raw Body End]:\n{}\n", end));
                     }
                 }
                 Some(summary)
