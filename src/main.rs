@@ -1193,7 +1193,9 @@ async fn main() {
     }
 
     // Apply logger middleware last so it catches fallback (404) requests
-    app = app.layer(axum::middleware::from_fn_with_state(state.clone(), request_logger));
+    app = app
+        .layer(axum::extract::DefaultBodyLimit::disable())
+        .layer(axum::middleware::from_fn_with_state(state.clone(), request_logger));
 
     let host_addr: std::net::IpAddr = args.host.parse().expect("Invalid IP address for --host");
     let addr = SocketAddr::from((host_addr, args.port));
