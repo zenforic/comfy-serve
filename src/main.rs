@@ -271,7 +271,7 @@ async fn openai_generate_handler(State(state): State<AppState>, headers: axum::h
     }
 
     // Use requested model or fallback to first active workflow
-    let target_workflow = if let Some(m) = payload.model {
+    let mut target_workflow = if let Some(m) = payload.model {
         m
     } else {
         match config.workflows.iter().find(|(_, c)| c.active) {
@@ -282,7 +282,20 @@ async fn openai_generate_handler(State(state): State<AppState>, headers: axum::h
 
     let wf_config = match config.workflows.get(&target_workflow) {
         Some(c) if c.active => c,
-        _ => return (StatusCode::BAD_REQUEST, "Workflow not active or not found").into_response(),
+        _ => {
+            // Attempt to recover if the client slugified the model name (e.g. replacing _ with -)
+            let alt_target = target_workflow.replace("-", "_");
+            if let Some(c) = config.workflows.get(&alt_target) {
+                if c.active {
+                    target_workflow = alt_target;
+                    c
+                } else {
+                    return (StatusCode::BAD_REQUEST, "Workflow not active or not found").into_response();
+                }
+            } else {
+                return (StatusCode::BAD_REQUEST, "Workflow not active or not found").into_response();
+            }
+        }
     };
 
     let mut workflows = match comfy::get_workflows() {
@@ -505,7 +518,11 @@ async fn request_logger(
     let uri = state.uri().clone();
     
     // Get peer address from ConnectInfo
-    let peer_addr = state.extensions().get::<std::net::SocketAddr>().map(|a| a.to_string()).unwrap_or_else(|| "unknown".to_string());
+    let peer_addr = state
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .map(|axum::extract::ConnectInfo(addr)| addr.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
 
     let response = next.run(state).await;
     let status = response.status();
