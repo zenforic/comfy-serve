@@ -893,12 +893,21 @@ async fn request_logger(
         };
 
         if is_multipart {
+            if is_debug {
+                tracing::debug!("First 20 bytes of body: {:?}", &bytes[..std::cmp::min(20, bytes.len())]);
+            }
             let mut detected_boundary = None;
-            if bytes.starts_with(b"--") {
-                if let Some(end_idx) = bytes.iter().position(|&b| b == b'\r' || b == b'\n') {
-                    if end_idx > 2 {
-                        if let Ok(b_str) = std::str::from_utf8(&bytes[2..end_idx]) {
-                            detected_boundary = Some(b_str.trim().to_string());
+            // Find the first occurrence of "--" in the first 100 bytes
+            if let Some(start_idx) = bytes.windows(2).take(100).position(|w| w == b"--") {
+                let boundary_start = start_idx + 2;
+                if let Some(end_offset) = bytes[boundary_start..].iter().position(|&b| b == b'\r' || b == b'\n') {
+                    let boundary_end = boundary_start + end_offset;
+                    if boundary_end > boundary_start {
+                        if let Ok(b_str) = std::str::from_utf8(&bytes[boundary_start..boundary_end]) {
+                            let b_trimmed = b_str.trim();
+                            if !b_trimmed.is_empty() && b_trimmed.len() < 100 {
+                                detected_boundary = Some(b_trimmed.to_string());
+                            }
                         }
                     }
                 }
