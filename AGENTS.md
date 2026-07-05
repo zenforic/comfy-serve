@@ -47,6 +47,11 @@ The backend uses `Arc<RwLock<T>>` for sharing state (configuration, dashboard to
 
 Workflow configurations in `config.toml` allow mapping fields using the `WorkflowFieldMap` struct:
 - **`required`**: If true, `POST /api/generate` will reject requests (`400 Bad Request`) missing this parameter.
+- **`input_target`**: Instructs the server on how to intercept and format incoming parameters. 
+  - `text`: Passed as standard JSON values. 
+  - `image_base64`: Incoming URLs are downloaded and converted to Base64 automatically.
+  - `image_url`: Incoming Base64 strings are decoded and temporarily hosted at `/api/temp-images/<uuid>` for nodes that expect URLs.
+  - `comfy_upload`: Image bytes (from URL or Base64) are uploaded natively to ComfyUI's `/upload/image` API with a temp name and `overwrite=true`, making them directly usable by standard ComfyUI `LoadImage` nodes.
 - **`is_value_map` / `map_keys` / `map_values`**: Maps incoming API strings/booleans/numbers to specific ComfyUI values. The API evaluates `map_keys` (comma-separated), matches the incoming string's index, and casts the corresponding string in `map_values` to the native JSON type required by the workflow (e.g. mapping `"true,false"` to `"0,0.9"`).
 
 ## LLM Assisted Restructure

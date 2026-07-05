@@ -111,6 +111,7 @@ original_node_id = "3"
 original_field_name = "text"
 exposed_as = "prompt"
 required = true
+input_target = "text" # Options: text, image_base64, image_url, comfy_upload
 is_value_map = false
 map_keys = ""
 map_values = ""
