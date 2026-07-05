@@ -384,25 +384,14 @@ async fn openai_generate_handler(State(state): State<AppState>, headers: axum::h
         None => return (StatusCode::BAD_REQUEST, "Workflow JSON not found").into_response(),
     };
 
-    let mut temp_cleanup_ids = Vec::new();
-    let host_header = headers.get("host").and_then(|h| h.to_str().ok());
-
     // Apply the text prompt to the field mapped as "prompt"
     for field_map in &wf_config.exposed_fields {
         if field_map.exposed_as == "prompt" {
-            let mut final_val = serde_json::Value::String(payload.prompt.clone());
-            
             if field_map.input_target != crate::config::FieldInputTarget::Text {
-                match process_image_input(&payload.prompt, &field_map.input_target, &state.comfy_client, &state.temp_images, host_header).await {
-                    Ok((processed_str, temp_id)) => {
-                        final_val = serde_json::Value::String(processed_str);
-                        if let Some(id) = temp_id {
-                            temp_cleanup_ids.push(id);
-                        }
-                    }
-                    Err(e) => return (StatusCode::BAD_REQUEST, format!("Image processing failed for prompt: {}", e)).into_response(),
-                }
+                return (StatusCode::BAD_REQUEST, "The prompt field is mapped to an image input, which is not supported by the /v1/images/generations endpoint.").into_response();
             }
+            
+            let final_val = serde_json::Value::String(payload.prompt.clone());
             
             if let Some(node) = wf_json.get_mut(&field_map.original_node_id) {
                 if let Some(inputs) = node.get_mut("inputs") {
@@ -412,7 +401,7 @@ async fn openai_generate_handler(State(state): State<AppState>, headers: axum::h
         }
     }
 
-    let res = match state.comfy_client.submit_prompt(wf_json).await {
+    match state.comfy_client.submit_prompt(wf_json).await {
         Ok(image_bytes) => {
             use base64::Engine;
             let b64 = base64::engine::general_purpose::STANDARD.encode(&image_bytes);
@@ -428,16 +417,7 @@ async fn openai_generate_handler(State(state): State<AppState>, headers: axum::h
             (StatusCode::OK, Json(res)).into_response()
         }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
-    };
-
-    if !temp_cleanup_ids.is_empty() {
-        let mut temp_images = state.temp_images.write().await;
-        for id in temp_cleanup_ids {
-            temp_images.remove(&id);
-        }
     }
-
-    res
 }
 
 #[derive(serde::Serialize)]
