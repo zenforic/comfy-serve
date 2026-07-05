@@ -875,19 +875,59 @@ async fn request_logger(
 
     let (state, body_str) = if is_debug {
         let content_type = state.headers().get(axum::http::header::CONTENT_TYPE).and_then(|h| h.to_str().ok()).unwrap_or("").to_string();
-        let is_binary = content_type.starts_with("multipart/") || content_type.starts_with("image/") || content_type.starts_with("application/octet-stream");
-
-        if is_binary && !app_state.log_expand_binary {
-            (state, Some(format!("[binary/{}]", if content_type.is_empty() { "unknown" } else { &content_type })))
-        } else {
+        
+        if content_type.starts_with("multipart/") && !app_state.log_expand_binary {
             let (parts, body) = state.into_parts();
             let bytes = match axum::body::to_bytes(body, usize::MAX).await {
                 Ok(b) => b,
                 Err(_) => axum::body::Bytes::new(),
             };
-            let body_str = String::from_utf8_lossy(&bytes).to_string();
+            
+            let temp_req = axum::extract::Request::from_parts(parts.clone(), axum::body::Body::from(bytes.clone()));
+            let mut summary = String::new();
+            summary.push_str("Multipart Payload:\n");
+            
+            use axum::extract::FromRequest;
+            match axum::extract::Multipart::from_request(temp_req, &()).await {
+                Ok(mut multipart) => {
+                    while let Ok(Some(field)) = multipart.next_field().await {
+                        let name = field.name().unwrap_or("unknown").to_string();
+                        let f_ct = field.content_type().unwrap_or("text/plain").to_string();
+                        let has_file = field.file_name().is_some();
+                        
+                        if f_ct.starts_with("image/") || f_ct.starts_with("application/octet-stream") || has_file {
+                            summary.push_str(&format!("  - {}: [binary data {}]\n", name, f_ct));
+                        } else {
+                            if let Ok(text) = field.text().await {
+                                summary.push_str(&format!("  - {}: {}\n", name, text));
+                            } else {
+                                summary.push_str(&format!("  - {}: [unparseable text]\n", name));
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    summary.push_str(&format!("  [Failed to parse multipart: {}]", e));
+                }
+            }
+            
             let state = axum::extract::Request::from_parts(parts, axum::body::Body::from(bytes));
-            (state, Some(body_str))
+            (state, Some(summary))
+        } else {
+            let is_binary = content_type.starts_with("image/") || content_type.starts_with("application/octet-stream");
+
+            if is_binary && !app_state.log_expand_binary {
+                (state, Some(format!("[binary/{}]", if content_type.is_empty() { "unknown" } else { &content_type })))
+            } else {
+                let (parts, body) = state.into_parts();
+                let bytes = match axum::body::to_bytes(body, usize::MAX).await {
+                    Ok(b) => b,
+                    Err(_) => axum::body::Bytes::new(),
+                };
+                let body_str = String::from_utf8_lossy(&bytes).to_string();
+                let state = axum::extract::Request::from_parts(parts, axum::body::Body::from(bytes));
+                (state, Some(body_str))
+            }
         }
     } else {
         (state, None)
