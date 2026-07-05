@@ -140,6 +140,7 @@ map_values = "0,0.9"
 - `-p, --port <PORT>`: Port to listen on (default: `3000`).
 - `--log-level debug`: Enables verbose debugging logs.
 - `--no-log-workflow`: Disables logging of the full ComfyUI JSON payload to the console when in debug mode, keeping the console clean while still logging the incoming frontend parameters.
+- `--log-expand-binary`: Expands binary payloads (like multipart forms) in the debug logs instead of showing `[binary/(type)]`.
 
 ## License
 MIT

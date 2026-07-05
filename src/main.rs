@@ -52,6 +52,10 @@ struct Args {
     /// Disable logging of the full workflow JSON request to ComfyUI in debug mode
     #[arg(long)]
     no_log_workflow: bool,
+
+    /// Expand binary payloads in debug logs instead of showing [binary/(type)]
+    #[arg(long)]
+    log_expand_binary: bool,
 }
 
 #[cfg(feature = "dashboard")]
@@ -67,6 +71,7 @@ struct AppState {
     password_hash: Arc<RwLock<String>>,
     api_keys: Arc<Vec<String>>,
     temp_images: Arc<RwLock<std::collections::HashMap<String, Vec<u8>>>>,
+    log_expand_binary: bool,
 }
 
 async fn list_workflows_handler(State(state): State<AppState>, headers: axum::http::HeaderMap) -> impl IntoResponse {
@@ -852,6 +857,7 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
 }
 
 async fn request_logger(
+    State(app_state): State<AppState>,
     state: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> impl IntoResponse {
@@ -865,6 +871,28 @@ async fn request_logger(
         .map(|axum::extract::ConnectInfo(addr)| addr.to_string())
         .unwrap_or_else(|| "unknown".to_string());
 
+    let is_debug = tracing::enabled!(tracing::Level::DEBUG);
+
+    let (state, body_str) = if is_debug {
+        let content_type = state.headers().get(axum::http::header::CONTENT_TYPE).and_then(|h| h.to_str().ok()).unwrap_or("").to_string();
+        let is_binary = content_type.starts_with("multipart/") || content_type.starts_with("image/") || content_type.starts_with("application/octet-stream");
+
+        if is_binary && !app_state.log_expand_binary {
+            (state, Some(format!("[binary/{}]", if content_type.is_empty() { "unknown" } else { &content_type })))
+        } else {
+            let (parts, body) = state.into_parts();
+            let bytes = match axum::body::to_bytes(body, usize::MAX).await {
+                Ok(b) => b,
+                Err(_) => axum::body::Bytes::new(),
+            };
+            let body_str = String::from_utf8_lossy(&bytes).to_string();
+            let state = axum::extract::Request::from_parts(parts, axum::body::Body::from(bytes));
+            (state, Some(body_str))
+        }
+    } else {
+        (state, None)
+    };
+
     let response = next.run(state).await;
     let status = response.status();
 
@@ -875,6 +903,12 @@ async fn request_logger(
         uri,
         status
     );
+
+    if let Some(body_str) = body_str {
+        if status != axum::http::StatusCode::NOT_FOUND {
+            tracing::debug!("Request payload: {}", body_str);
+        }
+    }
 
     response
 }
@@ -937,6 +971,7 @@ async fn main() {
         password_hash: Arc::new(RwLock::new(hash)),
         api_keys: Arc::new(api_keys),
         temp_images: Arc::new(RwLock::new(std::collections::HashMap::new())),
+        log_expand_binary: args.log_expand_binary,
     };
 
     info!("Starting comfy-serve API server...");
@@ -955,7 +990,7 @@ async fn main() {
         .route("/api/auth_check", get(check_auth_handler))
         .route("/api/restructure", post(restructure_handler))
         .route("/api/temp-images/{id}", get(get_temp_image_handler))
-        .with_state(state);
+        .with_state(state.clone());
 
         // Add more API routes here
 
@@ -976,7 +1011,7 @@ async fn main() {
     }
 
     // Apply logger middleware last so it catches fallback (404) requests
-    app = app.layer(axum::middleware::from_fn(request_logger));
+    app = app.layer(axum::middleware::from_fn_with_state(state.clone(), request_logger));
 
     let host_addr: std::net::IpAddr = args.host.parse().expect("Invalid IP address for --host");
     let addr = SocketAddr::from((host_addr, args.port));
