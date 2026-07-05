@@ -47,6 +47,7 @@ The backend uses `Arc<RwLock<T>>` for sharing state (configuration, dashboard to
 
 Workflow configurations in `config.toml` allow mapping fields using the `WorkflowFieldMap` struct:
 - **`required`**: If true, `POST /api/generate` will reject requests (`400 Bad Request`) missing this parameter.
+- **`randomize`**: If true, and if the OpenAI compatible `v1/images/generations` endpoint is hit, a random `u64` will automatically be generated and injected into this field to provide output variety.
 - **`input_target`**: Instructs the server on how to intercept and format incoming parameters. 
   - `text`: Passed as standard JSON values. 
   - `image_base64`: Incoming URLs are downloaded and converted to Base64 automatically.

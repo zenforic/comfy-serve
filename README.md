@@ -112,6 +112,7 @@ original_field_name = "text"
 exposed_as = "prompt"
 required = true
 input_target = "text" # Options: text, image_base64, image_url, comfy_upload
+randomize = false # Set true to inject a random seed when hitting the OpenAI endpoint
 is_value_map = false
 map_keys = ""
 map_values = ""

@@ -315,6 +315,7 @@ function WorkspaceEditor({ wf, wfJson, config, setConfig }: any) {
       exposed_as: "prompt",
       required: false,
       input_target: "text",
+      randomize: false,
       is_value_map: false,
       map_keys: "",
       map_values: ""
@@ -446,6 +447,17 @@ function WorkspaceEditor({ wf, wfJson, config, setConfig }: any) {
                     <option value="comfy_upload">Image (Upload to ComfyUI)</option>
                   </select>
                 </div>
+
+                {config.enable_openai_compat && field.exposed_as === 'seed' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <input type="checkbox" checked={field.randomize} onChange={e => {
+                      const newFields = [...(wfConfig?.exposed_fields || [])];
+                      newFields[idx].randomize = e.target.checked;
+                      setConfig({ ...config, workflows: { ...config.workflows, [wf]: { ...wfConfig, exposed_fields: newFields } } });
+                    }} />
+                    <label style={{ fontSize: 12, color: 'var(--accent)' }}>Randomize (OpenAI)?</label>
+                  </div>
+                )}
                 
                 <button onClick={() => {
                   const newFields = [...(wfConfig?.exposed_fields || [])];

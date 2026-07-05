@@ -384,18 +384,24 @@ async fn openai_generate_handler(State(state): State<AppState>, headers: axum::h
         None => return (StatusCode::BAD_REQUEST, "Workflow JSON not found").into_response(),
     };
 
-    // Apply the text prompt to the field mapped as "prompt"
+    // Apply the text prompt to the field mapped as "prompt" and any requested random seeds
     for field_map in &wf_config.exposed_fields {
+        let mut final_val = None;
+
         if field_map.exposed_as == "prompt" {
             if field_map.input_target != crate::config::FieldInputTarget::Text {
                 return (StatusCode::BAD_REQUEST, "The prompt field is mapped to an image input, which is not supported by the /v1/images/generations endpoint.").into_response();
             }
-            
-            let final_val = serde_json::Value::String(payload.prompt.clone());
-            
+            final_val = Some(serde_json::Value::String(payload.prompt.clone()));
+        } else if field_map.randomize {
+            let random_seed: u64 = rand::random();
+            final_val = Some(serde_json::Value::Number(random_seed.into()));
+        }
+
+        if let Some(val) = final_val {
             if let Some(node) = wf_json.get_mut(&field_map.original_node_id) {
                 if let Some(inputs) = node.get_mut("inputs") {
-                    inputs.as_object_mut().unwrap().insert(field_map.original_field_name.clone(), final_val);
+                    inputs.as_object_mut().unwrap().insert(field_map.original_field_name.clone(), val);
                 }
             }
         }

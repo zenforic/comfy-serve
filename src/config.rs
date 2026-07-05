@@ -35,6 +35,8 @@ pub struct WorkflowFieldMap {
     #[serde(default)]
     pub input_target: FieldInputTarget,
     #[serde(default)]
+    pub randomize: bool,
+    #[serde(default)]
     pub is_value_map: bool,
     #[serde(default)]
     pub map_keys: String,

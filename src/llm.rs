@@ -53,6 +53,7 @@ Schema for the output:
       "exposed_as": "string",
       "required": boolean (default to false unless user explicitly requires it),
       "input_target": "string" (one of: "text", "image_base64", "image_url", "comfy_upload". Default to "text" unless the field handles images),
+      "randomize": boolean (true if this field is a seed that should be randomized automatically in OpenAI endpoints),
       "is_value_map": boolean (true if user wants to map incoming values like true/false to specific numbers/strings),
       "map_keys": "string" (comma separated incoming values, e.g. "true,false", or "" if not used),
       "map_values": "string" (comma separated mapped ComfyUI values, e.g. "0,0.9", or "" if not used)
