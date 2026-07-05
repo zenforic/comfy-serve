@@ -66,6 +66,7 @@ struct AppState {
     dashboard_token: Arc<RwLock<Option<String>>>,
     password_hash: Arc<RwLock<String>>,
     api_keys: Arc<Vec<String>>,
+    temp_images: Arc<RwLock<std::collections::HashMap<String, Vec<u8>>>>,
 }
 
 async fn list_workflows_handler(State(state): State<AppState>, headers: axum::http::HeaderMap) -> impl IntoResponse {
@@ -156,6 +157,59 @@ struct GenerateRequest {
     params: std::collections::HashMap<String, serde_json::Value>,
 }
 
+async fn process_image_input(
+    input_str: &str,
+    target: &crate::config::FieldInputTarget,
+    comfy_client: &crate::comfy::ComfyClient,
+    temp_images: &Arc<RwLock<std::collections::HashMap<String, Vec<u8>>>>,
+    host_header: Option<&str>,
+) -> Result<(String, Option<String>), String> {
+    if target == &crate::config::FieldInputTarget::Text {
+        return Ok((input_str.to_string(), None));
+    }
+
+    let is_url = input_str.starts_with("http://") || input_str.starts_with("https://");
+    
+    if is_url && target == &crate::config::FieldInputTarget::ImageUrl {
+        return Ok((input_str.to_string(), None));
+    }
+
+    let raw_bytes = if is_url {
+        reqwest::get(input_str)
+            .await.map_err(|e| e.to_string())?
+            .bytes()
+            .await.map_err(|e| e.to_string())?
+            .to_vec()
+    } else {
+        use base64::Engine;
+        let b64_str = if let Some(idx) = input_str.find("base64,") {
+            &input_str[idx + 7..]
+        } else {
+            input_str
+        };
+        base64::engine::general_purpose::STANDARD.decode(b64_str.trim()).map_err(|e| format!("Base64 Error: {}", e))?
+    };
+
+    match target {
+        crate::config::FieldInputTarget::ImageBase64 => {
+            use base64::Engine;
+            Ok((base64::engine::general_purpose::STANDARD.encode(&raw_bytes), None))
+        }
+        crate::config::FieldInputTarget::ImageUrl => {
+            let id = uuid::Uuid::new_v4().to_string();
+            temp_images.write().await.insert(id.clone(), raw_bytes);
+            let host = host_header.unwrap_or("127.0.0.1:3000");
+            Ok((format!("http://{}/api/temp-images/{}", host, id), Some(id)))
+        }
+        crate::config::FieldInputTarget::ComfyUpload => {
+            let filename = format!("comfy_serve_temp_{}.png", uuid::Uuid::new_v4());
+            let name = comfy_client.upload_image(raw_bytes, &filename).await?;
+            Ok((name, None))
+        }
+        _ => Ok((input_str.to_string(), None)),
+    }
+}
+
 async fn generate_handler(State(state): State<AppState>, headers: axum::http::HeaderMap, Json(payload): Json<GenerateRequest>) -> impl IntoResponse {
     if !state.api_keys.is_empty() {
         let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok()).unwrap_or("");
@@ -185,6 +239,9 @@ async fn generate_handler(State(state): State<AppState>, headers: axum::http::He
         None => return (StatusCode::BAD_REQUEST, "Workflow JSON not found").into_response(),
     };
 
+    let mut temp_cleanup_ids = Vec::new();
+    let host_header = headers.get("host").and_then(|h| h.to_str().ok());
+
     // Required checks and apply mappings
     for field_map in &wf_config.exposed_fields {
         if field_map.required && !payload.params.contains_key(&field_map.exposed_as) {
@@ -194,20 +251,29 @@ async fn generate_handler(State(state): State<AppState>, headers: axum::http::He
         if let Some(val) = payload.params.get(&field_map.exposed_as) {
             let mut final_val = val.clone();
             
-            if field_map.is_value_map {
-                let incoming_str = match val {
-                    serde_json::Value::String(s) => s.to_string(),
-                    serde_json::Value::Bool(b) => b.to_string(),
-                    serde_json::Value::Number(n) => n.to_string(),
-                    _ => val.to_string(),
-                };
-                
+            let incoming_str = match val {
+                serde_json::Value::String(s) => s.to_string(),
+                serde_json::Value::Bool(b) => b.to_string(),
+                serde_json::Value::Number(n) => n.to_string(),
+                _ => val.to_string(),
+            };
+
+            if field_map.input_target != crate::config::FieldInputTarget::Text {
+                match process_image_input(&incoming_str, &field_map.input_target, &state.comfy_client, &state.temp_images, host_header).await {
+                    Ok((processed_str, temp_id)) => {
+                        final_val = serde_json::Value::String(processed_str);
+                        if let Some(id) = temp_id {
+                            temp_cleanup_ids.push(id);
+                        }
+                    }
+                    Err(e) => return (StatusCode::BAD_REQUEST, format!("Image processing failed for {}: {}", field_map.exposed_as, e)).into_response(),
+                }
+            } else if field_map.is_value_map {
                 let keys: Vec<&str> = field_map.map_keys.split(',').map(|s| s.trim()).collect();
                 let values: Vec<&str> = field_map.map_values.split(',').map(|s| s.trim()).collect();
                 
                 if let Some(idx) = keys.iter().position(|&k| k == incoming_str) {
                     if let Some(mapped_val_str) = values.get(idx) {
-                        // Attempt to parse mapped value as JSON (e.g. number/bool), fallback to string
                         final_val = serde_json::from_str(mapped_val_str)
                             .unwrap_or_else(|_| serde_json::Value::String(mapped_val_str.to_string()));
                     }
@@ -224,7 +290,7 @@ async fn generate_handler(State(state): State<AppState>, headers: axum::http::He
     }
 
     // Submit to ComfyUI
-    match state.comfy_client.submit_prompt(wf_json).await {
+    let res = match state.comfy_client.submit_prompt(wf_json).await {
         Ok(image_bytes) => {
             Response::builder()
                 .header(header::CONTENT_TYPE, "image/png")
@@ -232,7 +298,17 @@ async fn generate_handler(State(state): State<AppState>, headers: axum::http::He
                 .unwrap()
         }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    };
+
+    // Cleanup temp images
+    if !temp_cleanup_ids.is_empty() {
+        let mut temp_images = state.temp_images.write().await;
+        for id in temp_cleanup_ids {
+            temp_images.remove(&id);
+        }
     }
+
+    res
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -308,18 +384,35 @@ async fn openai_generate_handler(State(state): State<AppState>, headers: axum::h
         None => return (StatusCode::BAD_REQUEST, "Workflow JSON not found").into_response(),
     };
 
+    let mut temp_cleanup_ids = Vec::new();
+    let host_header = headers.get("host").and_then(|h| h.to_str().ok());
+
     // Apply the text prompt to the field mapped as "prompt"
     for field_map in &wf_config.exposed_fields {
         if field_map.exposed_as == "prompt" {
+            let mut final_val = serde_json::Value::String(payload.prompt.clone());
+            
+            if field_map.input_target != crate::config::FieldInputTarget::Text {
+                match process_image_input(&payload.prompt, &field_map.input_target, &state.comfy_client, &state.temp_images, host_header).await {
+                    Ok((processed_str, temp_id)) => {
+                        final_val = serde_json::Value::String(processed_str);
+                        if let Some(id) = temp_id {
+                            temp_cleanup_ids.push(id);
+                        }
+                    }
+                    Err(e) => return (StatusCode::BAD_REQUEST, format!("Image processing failed for prompt: {}", e)).into_response(),
+                }
+            }
+            
             if let Some(node) = wf_json.get_mut(&field_map.original_node_id) {
                 if let Some(inputs) = node.get_mut("inputs") {
-                    inputs.as_object_mut().unwrap().insert(field_map.original_field_name.clone(), serde_json::Value::String(payload.prompt.clone()));
+                    inputs.as_object_mut().unwrap().insert(field_map.original_field_name.clone(), final_val);
                 }
             }
         }
     }
 
-    match state.comfy_client.submit_prompt(wf_json).await {
+    let res = match state.comfy_client.submit_prompt(wf_json).await {
         Ok(image_bytes) => {
             use base64::Engine;
             let b64 = base64::engine::general_purpose::STANDARD.encode(&image_bytes);
@@ -335,7 +428,16 @@ async fn openai_generate_handler(State(state): State<AppState>, headers: axum::h
             (StatusCode::OK, Json(res)).into_response()
         }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    };
+
+    if !temp_cleanup_ids.is_empty() {
+        let mut temp_images = state.temp_images.write().await;
+        for id in temp_cleanup_ids {
+            temp_images.remove(&id);
+        }
     }
+
+    res
 }
 
 #[derive(serde::Serialize)]
@@ -473,6 +575,18 @@ async fn restructure_handler(State(state): State<AppState>, headers: axum::http:
     }
 }
 
+async fn get_temp_image_handler(State(state): State<AppState>, axum::extract::Path(id): axum::extract::Path<String>) -> impl IntoResponse {
+    let images = state.temp_images.read().await;
+    if let Some(bytes) = images.get(&id) {
+        Response::builder()
+            .header(header::CONTENT_TYPE, "image/png")
+            .body(Body::from(bytes.clone()))
+            .unwrap()
+    } else {
+        (StatusCode::NOT_FOUND, "Image not found or expired").into_response()
+    }
+}
+
 #[cfg(feature = "dashboard")]
 async fn static_handler(uri: Uri) -> impl IntoResponse {
     let mut path = uri.path().trim_start_matches('/').to_string();
@@ -562,6 +676,22 @@ async fn main() {
     tracing_subscriber::fmt().with_max_level(level).init();
 
     let config = config::load_config("config.toml");
+    if let Ok(content) = std::fs::read_to_string("config.toml") {
+        if content.contains("workflows") && !content.contains("input_target") {
+            println!("Old config format detected (missing input_target mapping settings).");
+            println!("Would you like to backup your old config and migrate it to the new format? (y/N)");
+            let mut input = String::new();
+            if std::io::stdin().read_line(&mut input).is_ok() && input.trim().eq_ignore_ascii_case("y") {
+                let backup_path = "config.toml.bak";
+                if let Ok(_) = std::fs::copy("config.toml", backup_path) {
+                    if let Ok(_) = config::save_config(&config, "config.toml") {
+                        println!("Migrated config and saved backup to {}", backup_path);
+                    }
+                }
+            }
+        }
+    }
+
     let comfy_client = Arc::new(comfy::ComfyClient::new(config.comfyui_url.clone(), !args.no_log_workflow));
     
     let hash = std::env::var("DASHBOARD_PASSWORD_HASH").unwrap_or_default().trim().to_string();
@@ -579,6 +709,7 @@ async fn main() {
         dashboard_token: Arc::new(RwLock::new(None)),
         password_hash: Arc::new(RwLock::new(hash)),
         api_keys: Arc::new(api_keys),
+        temp_images: Arc::new(RwLock::new(std::collections::HashMap::new())),
     };
 
     info!("Starting comfy-serve API server...");
@@ -594,6 +725,7 @@ async fn main() {
         .route("/api/login", post(login_handler))
         .route("/api/auth_check", get(check_auth_handler))
         .route("/api/restructure", post(restructure_handler))
+        .route("/api/temp-images/{id}", get(get_temp_image_handler))
         .layer(axum::middleware::from_fn(request_logger))
         .with_state(state);
 

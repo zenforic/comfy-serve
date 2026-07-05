@@ -1,6 +1,6 @@
 [package]
 name = "comfy-serve"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 description = "A lightweight, API forwarding proxy for ComfyUI."
 readme = "README.md"
@@ -19,7 +19,7 @@ futures-util = "0.3.32"
 mime_guess = { version = "2.0.5", optional = true }
 rand = "0.10.1"
 rand_core = { version = "0.6.4", features = ["getrandom"] }
-reqwest = { version = "0.13.4", features = ["json"] }
+reqwest = { version = "0.13.4", features = ["json", "multipart"] }
 rust-embed = { version = "8.11.0", features = ["mime-guess"], optional = true }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"

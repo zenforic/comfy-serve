@@ -185,6 +185,32 @@ impl ComfyClient {
         // Return the first image for synchronous API simplicity
         Ok(output_images.remove(0))
     }
+
+    pub async fn upload_image(&self, image_bytes: Vec<u8>, filename: &str) -> Result<String, String> {
+        let url = format!("{}/upload/image", self.base_url);
+        
+        let part = reqwest::multipart::Part::bytes(image_bytes)
+            .file_name(filename.to_string())
+            .mime_str("image/png").unwrap_or_else(|_| reqwest::multipart::Part::bytes(vec![]));
+            
+        let form = reqwest::multipart::Form::new()
+            .part("image", part)
+            .text("overwrite", "true");
+
+        let res = self.http.post(&url)
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        #[derive(Deserialize)]
+        struct UploadResponse {
+            name: String,
+        }
+
+        let upload_res: UploadResponse = res.json().await.map_err(|e| e.to_string())?;
+        Ok(upload_res.name)
+    }
 }
 
 pub fn get_workflows() -> Result<HashMap<String, serde_json::Value>, String> {

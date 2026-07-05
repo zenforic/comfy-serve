@@ -313,6 +313,7 @@ function WorkspaceEditor({ wf, wfJson, config, setConfig }: any) {
       original_field_name: "text",
       exposed_as: "prompt",
       required: false,
+      input_target: "text",
       is_value_map: false,
       map_keys: "",
       map_values: ""
@@ -423,6 +424,23 @@ function WorkspaceEditor({ wf, wfJson, config, setConfig }: any) {
                     setConfig({ ...config, workflows: { ...config.workflows, [wf]: { ...wfConfig, exposed_fields: newFields } } });
                   }} />
                   <label style={{ fontSize: 12 }}>Value Map?</label>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <label style={{ fontSize: 12 }}>Input Target:</label>
+                  <select 
+                    value={field.input_target || 'text'} 
+                    onChange={e => {
+                      const newFields = [...(wfConfig?.exposed_fields || [])];
+                      newFields[idx].input_target = e.target.value;
+                      setConfig({ ...config, workflows: { ...config.workflows, [wf]: { ...wfConfig, exposed_fields: newFields } } });
+                    }}
+                    style={{ padding: '2px 5px', fontSize: 12, backgroundColor: '#15151e', border: '1px solid var(--border-color)', color: 'var(--text-main)', borderRadius: 4 }}
+                  >
+                    <option value="text">Text (Default)</option>
+                    <option value="image_base64">Image (Base64 Node)</option>
+                    <option value="image_url">Image (URL Node)</option>
+                    <option value="comfy_upload">Image (Upload to ComfyUI)</option>
+                  </select>
                 </div>
                 
                 <button onClick={() => {

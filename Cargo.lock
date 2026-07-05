@@ -300,7 +300,7 @@ dependencies = [
 
 [[package]]
 name = "comfy-serve"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "argon2",
  "axum",
@@ -1279,6 +1279,7 @@ dependencies = [
  "bytes",
  "encoding_rs",
  "futures-core",
+ "futures-util",
  "h2",
  "http",
  "http-body",
@@ -1289,6 +1290,7 @@ dependencies = [
  "js-sys",
  "log",
  "mime",
+ "mime_guess",
  "percent-encoding",
  "pin-project-lite",
  "quinn",

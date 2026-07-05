@@ -10,6 +10,21 @@ pub struct LlmConfig {
     pub api_key: Option<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum FieldInputTarget {
+    Text,
+    ImageBase64,
+    ImageUrl,
+    ComfyUpload,
+}
+
+impl Default for FieldInputTarget {
+    fn default() -> Self {
+        Self::Text
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct WorkflowFieldMap {
     pub original_node_id: String,
@@ -17,6 +32,8 @@ pub struct WorkflowFieldMap {
     pub exposed_as: String,
     #[serde(default)]
     pub required: bool,
+    #[serde(default)]
+    pub input_target: FieldInputTarget,
     #[serde(default)]
     pub is_value_map: bool,
     #[serde(default)]
@@ -64,3 +81,41 @@ pub fn save_config<P: AsRef<Path>>(config: &Config, path: P) -> Result<(), std::
     let toml_str = toml::to_string(config).unwrap();
     fs::write(path, toml_str)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_field_input_target_serialization() {
+        let field_map = WorkflowFieldMap {
+            original_node_id: "1".to_string(),
+            original_field_name: "image".to_string(),
+            exposed_as: "input_image".to_string(),
+            required: true,
+            input_target: FieldInputTarget::ImageBase64,
+            is_value_map: false,
+            map_keys: "".to_string(),
+            map_values: "".to_string(),
+        };
+
+        let serialized = toml::to_string(&field_map).unwrap();
+        assert!(serialized.contains("input_target = \"image_base64\""));
+
+        let deserialized: WorkflowFieldMap = toml::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.input_target, FieldInputTarget::ImageBase64);
+    }
+
+    #[test]
+    fn test_field_input_target_default_deserialization() {
+        // Test deserializing from old config format that lacks input_target
+        let old_toml = r#"
+            original_node_id = "1"
+            original_field_name = "text"
+            exposed_as = "prompt"
+        "#;
+        let deserialized: WorkflowFieldMap = toml::from_str(old_toml).unwrap();
+        assert_eq!(deserialized.input_target, FieldInputTarget::Text);
+    }
+}
+
