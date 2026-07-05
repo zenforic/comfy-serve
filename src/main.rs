@@ -190,6 +190,19 @@ async fn process_image_input(
         base64::engine::general_purpose::STANDARD.decode(b64_str.trim()).map_err(|e| format!("Base64 Error: {}", e))?
     };
 
+    if target == &crate::config::FieldInputTarget::Text {
+        return Ok((input_str.to_string(), None));
+    }
+    process_raw_image_bytes(raw_bytes, target, comfy_client, temp_images, host_header).await
+}
+
+async fn process_raw_image_bytes(
+    raw_bytes: Vec<u8>,
+    target: &crate::config::FieldInputTarget,
+    comfy_client: &crate::comfy::ComfyClient,
+    temp_images: &Arc<RwLock<std::collections::HashMap<String, Vec<u8>>>>,
+    host_header: Option<&str>,
+) -> Result<(String, Option<String>), String> {
     match target {
         crate::config::FieldInputTarget::ImageBase64 => {
             use base64::Engine;
@@ -206,7 +219,7 @@ async fn process_image_input(
             let name = comfy_client.upload_image(raw_bytes, &filename).await?;
             Ok((name, None))
         }
-        _ => Ok((input_str.to_string(), None)),
+        _ => Err("Invalid target for raw image bytes".to_string()),
     }
 }
 
@@ -417,6 +430,143 @@ async fn openai_generate_handler(State(state): State<AppState>, headers: axum::h
                 data: vec![OpenAiImageData {
                     b64_json: Some(b64),
                     url: None, // We don't host the image natively yet, so return base64
+                }],
+            };
+
+            (StatusCode::OK, Json(res)).into_response()
+        }
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    }
+}
+
+async fn openai_edits_handler(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    mut multipart: axum::extract::Multipart,
+) -> impl IntoResponse {
+    if !state.api_keys.is_empty() {
+        let auth_header = headers.get("Authorization").and_then(|h| h.to_str().ok()).unwrap_or("");
+        let token = auth_header.replace("Bearer ", "");
+        if !state.api_keys.contains(&token) {
+            return (StatusCode::UNAUTHORIZED, "Invalid or missing API key").into_response();
+        }
+    }
+
+    let config = state.config.read().await;
+    if !config.enable_openai_compat {
+        return (StatusCode::FORBIDDEN, "OpenAI compat is disabled").into_response();
+    }
+
+    let mut prompt: Option<String> = None;
+    let mut image_bytes: Option<Vec<u8>> = None;
+    let mut model: Option<String> = None;
+    
+    while let Some(field) = multipart.next_field().await.unwrap_or(None) {
+        let name = field.name().unwrap_or("").to_string();
+        if name == "prompt" {
+            prompt = field.text().await.ok();
+        } else if name == "image" {
+            image_bytes = field.bytes().await.map(|b| b.to_vec()).ok();
+        } else if name == "model" {
+            model = field.text().await.ok();
+        }
+    }
+    
+    let prompt = match prompt {
+        Some(p) => p,
+        None => return (StatusCode::BAD_REQUEST, "Missing prompt field").into_response(),
+    };
+    
+    let image_bytes = match image_bytes {
+        Some(b) => b,
+        None => return (StatusCode::BAD_REQUEST, "Missing image field").into_response(),
+    };
+
+    let mut target_workflow = if let Some(m) = model {
+        m
+    } else {
+        match config.workflows.iter().find(|(_, c)| c.active) {
+            Some((k, _)) => k.clone(),
+            None => return (StatusCode::BAD_REQUEST, "No active workflows configured").into_response(),
+        }
+    };
+
+    let wf_config = match config.workflows.get(&target_workflow) {
+        Some(c) if c.active => c,
+        _ => {
+            let alt_target = target_workflow.replace("-", "_");
+            if let Some(c) = config.workflows.get(&alt_target) {
+                if c.active {
+                    target_workflow = alt_target;
+                    c
+                } else {
+                    return (StatusCode::BAD_REQUEST, "Workflow is inactive").into_response();
+                }
+            } else {
+                return (StatusCode::BAD_REQUEST, format!("Workflow '{}' not found", target_workflow)).into_response();
+            }
+        }
+    };
+
+    let mut workflows = match comfy::get_workflows() {
+        Ok(w) => w,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load workflows").into_response(),
+    };
+
+    let mut wf_json = match workflows.remove(&target_workflow) {
+        Some(json) => json,
+        None => return (StatusCode::BAD_REQUEST, "Workflow JSON not found").into_response(),
+    };
+    
+    let host_header = headers.get("host").and_then(|h| h.to_str().ok());
+    let mut temp_cleanup_ids = Vec::new();
+
+    for field_map in &wf_config.exposed_fields {
+        let mut final_val = None;
+
+        if field_map.exposed_as == "prompt" {
+            final_val = Some(serde_json::Value::String(prompt.clone()));
+        } else if field_map.exposed_as == "image" {
+            match process_raw_image_bytes(image_bytes.clone(), &field_map.input_target, &state.comfy_client, &state.temp_images, host_header).await {
+                Ok((res_val, cleanup_id)) => {
+                    final_val = Some(serde_json::Value::String(res_val));
+                    if let Some(id) = cleanup_id {
+                        temp_cleanup_ids.push(id);
+                    }
+                }
+                Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to process image: {}", e)).into_response(),
+            }
+        } else if field_map.randomize {
+            let random_seed: u64 = rand::random();
+            final_val = Some(serde_json::Value::Number(random_seed.into()));
+        }
+
+        if let Some(val) = final_val {
+            if let Some(node) = wf_json.get_mut(&field_map.original_node_id) {
+                if let Some(inputs) = node.get_mut("inputs") {
+                    inputs.as_object_mut().unwrap().insert(field_map.original_field_name.clone(), val);
+                }
+            }
+        }
+    }
+
+    let submit_result = state.comfy_client.submit_prompt(wf_json).await;
+
+    // Cleanup temp hosted images
+    for id in temp_cleanup_ids {
+        state.temp_images.write().await.remove(&id);
+    }
+
+    match submit_result {
+        Ok(returned_image_bytes) => {
+            use base64::Engine;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&returned_image_bytes);
+            
+            let res = OpenAiImageResponse {
+                created: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+                data: vec![OpenAiImageData {
+                    b64_json: Some(b64),
+                    url: None, 
                 }],
             };
 
@@ -707,7 +857,7 @@ async fn main() {
         .route("/api/config", get(get_config_handler).post(update_config_handler))
         .route("/api/generate", post(generate_handler))
         .route("/v1/images/generations", post(openai_generate_handler))
-        .route("/v1/images/edits", post(openai_generate_handler))
+        .route("/v1/images/edits", post(openai_edits_handler))
         .route("/v1/models", get(openai_models_handler))
         .route("/api/login", post(login_handler))
         .route("/api/auth_check", get(check_auth_handler))
