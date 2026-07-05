@@ -693,13 +693,43 @@ with open("output.png", "wb") as f:
                 <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span>{field.exposed_as} {field.required && <span style={{ color: 'var(--danger)' }}>*</span>}</span>
                 </label>
-                <input 
-                  type="text" 
-                  value={params[field.exposed_as] || ''} 
-                  onChange={e => setParams({ ...params, [field.exposed_as]: e.target.value })}
-                  placeholder={field.is_value_map ? `Mapped Values: ${field.map_keys}` : "Value"}
-                  style={{ width: '100%', marginTop: 8 }}
-                />
+                {field.input_target && field.input_target !== 'text' ? (
+                  <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <input 
+                        type="file" 
+                        accept="image/*"
+                        onChange={e => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (evt) => {
+                              setParams({ ...params, [field.exposed_as]: evt.target?.result as string });
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                        style={{ fontSize: 13 }}
+                      />
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Auto-converts to Base64</span>
+                    </div>
+                    <input 
+                      type="text" 
+                      value={params[field.exposed_as] || ''} 
+                      onChange={e => setParams({ ...params, [field.exposed_as]: e.target.value })}
+                      placeholder="Or enter image URL / manual Base64..."
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                ) : (
+                  <input 
+                    type="text" 
+                    value={params[field.exposed_as] || ''} 
+                    onChange={e => setParams({ ...params, [field.exposed_as]: e.target.value })}
+                    placeholder={field.is_value_map ? `Mapped Values: ${field.map_keys}` : "Value"}
+                    style={{ width: '100%', marginTop: 8 }}
+                  />
+                )}
               </div>
             ))}
             <button 
