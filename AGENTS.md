@@ -36,7 +36,7 @@ If you need to make changes to the dashboard UI:
 - `GET /api/config` - Returns the current `config.toml` layout.
 - `POST /api/config` - Overwrites `config.toml`.
 - `POST /api/generate` - The main custom generation endpoint. (Secured by `Authorization: Bearer <key>` if `API_KEYS` is configured in `.env`)
-- `POST /v1/images/generations` - An OpenAI compatible endpoint mimicking DALL-E image generation requests. Maps the "prompt" to a specific field configured in the dashboard. (Secured by `Authorization: Bearer <key>` if `API_KEYS` is configured in `.env`)
+- `POST /v1/images/generations` and `POST /v1/images/edits` - OpenAI compatible endpoints mimicking DALL-E image generation and edit requests. Maps the "prompt" to a specific field configured in the dashboard. (Secured by `Authorization: Bearer <key>` if `API_KEYS` is configured in `.env`)
 - `POST /api/login` - Authenticates a dashboard session.
 
 ## State Management

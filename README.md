@@ -61,8 +61,12 @@ To expose a ComfyUI workflow via the API:
 
 - `GET /api/models` - Lists active configured workflows and their required parameters.
 - `POST /api/generate` - The main custom image generation endpoint.
-- `GET /v1/models` - OpenAI compatible endpoint returning a list of active workflows as available models.
-- `POST /v1/images/generations` - OpenAI compatible endpoint mimicking DALL-E image generation requests.
+### OpenAI Compatible API
+
+You can use standard OpenAI client libraries to interface with `comfy-serve` by pointing the base URL to your `comfy-serve` instance.
+
+- **`GET /v1/models`**: Returns all active workflows as available models.
+- **`POST /v1/images/generations`** and **`POST /v1/images/edits`**: Acts as a drop-in replacement for DALL-E. The requested `prompt` text string will be forwarded to whichever node you exposed as `prompt`.
 
 ## Environment Configuration
 

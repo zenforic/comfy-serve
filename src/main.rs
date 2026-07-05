@@ -707,12 +707,12 @@ async fn main() {
         .route("/api/config", get(get_config_handler).post(update_config_handler))
         .route("/api/generate", post(generate_handler))
         .route("/v1/images/generations", post(openai_generate_handler))
+        .route("/v1/images/edits", post(openai_generate_handler))
         .route("/v1/models", get(openai_models_handler))
         .route("/api/login", post(login_handler))
         .route("/api/auth_check", get(check_auth_handler))
         .route("/api/restructure", post(restructure_handler))
         .route("/api/temp-images/{id}", get(get_temp_image_handler))
-        .layer(axum::middleware::from_fn(request_logger))
         .with_state(state);
 
         // Add more API routes here
@@ -732,6 +732,9 @@ async fn main() {
     } else {
         app = app.fallback(|| async { (StatusCode::NOT_FOUND, "Not Found") });
     }
+
+    // Apply logger middleware last so it catches fallback (404) requests
+    app = app.layer(axum::middleware::from_fn(request_logger));
 
     let host_addr: std::net::IpAddr = args.host.parse().expect("Invalid IP address for --host");
     let addr = SocketAddr::from((host_addr, args.port));
