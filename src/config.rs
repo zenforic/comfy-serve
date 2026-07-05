@@ -96,6 +96,7 @@ mod tests {
             exposed_as: "input_image".to_string(),
             required: true,
             input_target: FieldInputTarget::ImageBase64,
+            randomize: false,
             is_value_map: false,
             map_keys: "".to_string(),
             map_values: "".to_string(),
