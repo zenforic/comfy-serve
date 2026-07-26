@@ -7,6 +7,7 @@ Comfy-Serve is a high-performance Rust proxy server and React dashboard designed
 - **React Dashboard**: An elegant dusk-themed dashboard to visually map complex ComfyUI nodes (e.g., KSampler seed, positive prompt, CFG scale) to simple API parameters.
 - **LLM Assisted Restructuring**: Automatically analyze and expose workflow variables using an optional OpenAI-compatible LLM endpoint.
 - **Dynamic Caching Bypass**: Automatically forces ComfyUI's `SaveImageWebsocket` nodes to execute every time without cluttering disk history, ensuring smooth image delivery.
+- **Audio Support**: Supports ComfyUI audio workflows via `SaveAudio` nodes. Audio outputs (wav, mp3, flac, opus) are automatically detected and returned with the correct `Content-Type`. Audio inputs are uploaded to ComfyUI for use with `LoadAudio` nodes.
 - **OpenAI Compatible Endpoint**: Drop-in replacement for OpenAI's image generation API. Route your existing AI apps to Comfy-Serve effortlessly.
 
 ## Getting Started
@@ -52,7 +53,7 @@ To install with the dashboard from source, see the instructions below.
 ### Adding Workflows
 
 To expose a ComfyUI workflow via the API:
-1. In ComfyUI, ensure you are using a `SaveImageWebsocket` or standard `SaveImage` node for your final output.
+1. In ComfyUI, ensure you are using a `SaveImageWebsocket` or standard `SaveImage` node (or `SaveAudio`/`SaveAudioAdvanced`/`SaveAudioMP3`/`SaveAudioOpus` for audio workflows) for your final output.
 2. Click **Save (API Format)** in ComfyUI to export the workflow JSON.
 3. Place the JSON file into the `active-workflows/` directory in the `comfy-serve` root folder.
 4. Refresh the Comfy-Serve dashboard to see and map the new workflow!
@@ -60,7 +61,7 @@ To expose a ComfyUI workflow via the API:
 ## API Endpoints
 
 - `GET /api/models` - Lists active configured workflows and their required parameters.
-- `POST /api/generate` - The main custom image generation endpoint.
+- `POST /api/generate` - The main custom generation endpoint. Supports both image and audio workflows; the response `Content-Type` is set dynamically based on the output type.
 ### OpenAI Compatible API
 
 You can use standard OpenAI client libraries to interface with `comfy-serve` by pointing the base URL to your `comfy-serve` instance.
@@ -116,7 +117,7 @@ original_node_id = "3"
 original_field_name = "text"
 exposed_as = "prompt"
 required = true
-input_target = "text" # Options: text, image_base64, image_url, comfy_upload
+input_target = "text" # Options: text, image_base64, image_url, comfy_upload, audio_upload
 randomize = false # Set true to inject a random seed when hitting the OpenAI endpoint
 is_value_map = false
 map_keys = ""

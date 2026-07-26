@@ -12,8 +12,8 @@ This file serves as documentation for AI agents continuing work on the `comfy-se
 
 - `src/` - Rust backend source code.
   - `main.rs` - Axum router, state management, and API endpoints.
-  - `config.rs` - Configuration serialization (`config.toml`).
-  - `comfy.rs` - Logic to submit prompts to ComfyUI via HTTP/WebSocket and retrieve results.
+  - `config.rs` - Configuration serialization (`config.toml`), including the `FieldInputTarget` enum (text, image_base64, image_url, comfy_upload, audio_upload).
+  - `comfy.rs` - Logic to submit prompts to ComfyUI via HTTP/WebSocket and retrieve results (both image and audio outputs).
   - `auth.rs` - Argon2 password hashing logic for the dashboard.
 - `frontend/` - React frontend source code.
   - `src/App.tsx` - Main routing and logic for Login, Onboarding, and the Dashboard Workspace.
@@ -35,7 +35,7 @@ If you need to make changes to the dashboard UI:
 - `GET /v1/models` - OpenAI compatible endpoint returning a list of active workflows as available models. (Secured by `Authorization: Bearer <key>` if `API_KEYS` is configured in `.env`)
 - `GET /api/config` - Returns the current `config.toml` layout.
 - `POST /api/config` - Overwrites `config.toml`.
-- `POST /api/generate` - The main custom generation endpoint. (Secured by `Authorization: Bearer <key>` if `API_KEYS` is configured in `.env`)
+- `POST /api/generate` - The main custom generation endpoint. Supports both image and audio workflows — the response `Content-Type` is set dynamically based on the output type (e.g., `image/png`, `audio/mpeg`). (Secured by `Authorization: Bearer <key>` if `API_KEYS` is configured in `.env`)
 - `POST /v1/images/generations` and `POST /v1/images/edits` - OpenAI compatible endpoints mimicking DALL-E image generation and edit requests. `generations` maps the "prompt" JSON string to a specific field exposed as `prompt`. `edits` accepts `multipart/form-data`, mapping the `prompt` string to the `prompt` field and the `image` binary to the `image` field. (Secured by `Authorization: Bearer <key>` if `API_KEYS` is configured in `.env`)
 - `POST /api/login` - Authenticates a dashboard session.
 
@@ -53,6 +53,7 @@ Workflow configurations in `config.toml` allow mapping fields using the `Workflo
   - `image_base64`: Incoming URLs are downloaded and converted to Base64 automatically.
   - `image_url`: Incoming Base64 strings are decoded and temporarily hosted at `/api/temp-images/<uuid>` for nodes that expect URLs.
   - `comfy_upload`: Image bytes (from URL or Base64) are uploaded natively to ComfyUI's `/upload/image` API with a temp name and `overwrite=true`, making them directly usable by standard ComfyUI `LoadImage` nodes.
+  - `audio_upload`: Audio bytes (from URL or Base64) are uploaded to ComfyUI's `/upload/image` API with a temp `.wav` filename and `overwrite=true`. ComfyUI's upload endpoint does not validate file type, so audio files are accepted. The returned filename is injected into a ComfyUI `LoadAudio` node. This is the only input method for audio since `LoadAudio` loads exclusively from the input directory.
 - **`is_value_map` / `map_keys` / `map_values`**: Maps incoming API strings/booleans/numbers to specific ComfyUI values. The API evaluates `map_keys` (comma-separated), matches the incoming string's index, and casts the corresponding string in `map_values` to the native JSON type required by the workflow (e.g. mapping `"true,false"` to `"0,0.9"`).
 
 ## LLM Assisted Restructure
@@ -79,7 +80,10 @@ The frontend dashboard is optionally compiled into the binary via the `dashboard
 
 `SaveImageWebsocket` nodes in ComfyUI do not write to the disk/history, meaning if ComfyUI caches the node execution, the binary image is never transmitted over the WebSocket. To fix this, `comfy-serve` dynamically intercepts all incoming workflows, identifies any `SaveImageWebsocket` nodes, and injects a randomized `comfy_serve_salt` hidden input. This forces the node to bypass ComfyUI's cache entirely and always execute, guaranteeing that images are delivered to the proxy.
 
+Note: Standard `SaveImage` and `SaveAudio` nodes (including `SaveAudioAdvanced`, `SaveAudioMP3`, `SaveAudioOpus`) write to disk and appear in ComfyUI's history. These are retrieved after execution completes via the `/history/<prompt_id>` and `/view` endpoints. Audio outputs are detected via the `"audio"` key in the history output and their format (mp3, flac, opus, wav) is derived from the filename extension. No cache-busting salt is needed for these nodes since they always write to disk.
+
 ## Future Work
 
 - **Workflow Queuing**: Currently, `comfy-serve` opens a WebSocket connection and waits synchronously for the image to generate. If many requests come in, this could hold many open connections. Consider switching to an async task polling model if traffic scales.
-- **Output Storage**: Currently returns raw image bytes natively or Base64 in the OpenAI compat wrapper. It may be beneficial to save generated outputs locally and return persistent URLs instead.
+- **Output Storage**: Currently returns raw image or audio bytes natively (with dynamic `Content-Type` and `Content-Disposition` headers) or Base64 in the OpenAI compat wrapper. It may be beneficial to save generated outputs locally and return persistent URLs instead.
+- **Multiple Output Support**: Currently, `/api/generate` returns only the first output asset. Workflows that produce both images and audio (or multiple assets) will have the secondary outputs ignored. Consider returning all outputs as multipart or JSON metadata.
