@@ -221,7 +221,12 @@ async fn process_raw_image_bytes(
         }
         crate::config::FieldInputTarget::ComfyUpload => {
             let filename = format!("comfy_serve_temp_{}.png", uuid::Uuid::new_v4());
-            let name = comfy_client.upload_image(raw_bytes, &filename).await?;
+            let name = comfy_client.upload_file(raw_bytes, &filename).await?;
+            Ok((name, None))
+        }
+        crate::config::FieldInputTarget::AudioUpload => {
+            let filename = format!("comfy_serve_temp_{}.wav", uuid::Uuid::new_v4());
+            let name = comfy_client.upload_file(raw_bytes, &filename).await?;
             Ok((name, None))
         }
         _ => Err("Invalid target for raw image bytes".to_string()),
@@ -309,10 +314,12 @@ async fn generate_handler(State(state): State<AppState>, headers: axum::http::He
 
     // Submit to ComfyUI
     let res = match state.comfy_client.submit_prompt(wf_json).await {
-        Ok(image_bytes) => {
+        Ok(output_assets) => {
+            let first = &output_assets[0];
             Response::builder()
-                .header(header::CONTENT_TYPE, "image/png")
-                .body(Body::from(image_bytes))
+                .header(header::CONTENT_TYPE, first.content_type.as_str())
+                .header(header::CONTENT_DISPOSITION, format!("inline; filename=\"result.{}\"", first.extension))
+                .body(Body::from(first.data.clone()))
                 .unwrap()
         }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
@@ -426,9 +433,9 @@ async fn openai_generate_handler(State(state): State<AppState>, headers: axum::h
     }
 
     match state.comfy_client.submit_prompt(wf_json).await {
-        Ok(image_bytes) => {
+        Ok(output_assets) => {
             use base64::Engine;
-            let b64 = base64::engine::general_purpose::STANDARD.encode(&image_bytes);
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&output_assets[0].data);
             
             let res = OpenAiImageResponse {
                 created: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
@@ -582,9 +589,9 @@ async fn openai_edits_handler(
     }
 
     match submit_result {
-        Ok(returned_image_bytes) => {
+        Ok(output_assets) => {
             use base64::Engine;
-            let b64 = base64::engine::general_purpose::STANDARD.encode(&returned_image_bytes);
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&output_assets[0].data);
             
             let res = OpenAiImageResponse {
                 created: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),

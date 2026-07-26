@@ -445,6 +445,7 @@ function WorkspaceEditor({ wf, wfJson, config, setConfig }: any) {
                     <option value="image_base64">Image (Base64 Node)</option>
                     <option value="image_url">Image (URL Node)</option>
                     <option value="comfy_upload">Image (Upload to ComfyUI)</option>
+                    <option value="audio_upload">Audio (Upload to ComfyUI)</option>
                   </select>
                 </div>
 
@@ -555,7 +556,8 @@ function TestApiView({ config }: { config: any }) {
   const [params, setParams] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<'curl' | 'python'>('curl');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [resultImage, setResultImage] = useState<string | null>(null);
+  const [resultUrl, setResultUrl] = useState<string | null>(null);
+  const [resultContentType, setResultContentType] = useState<string>('');
   const [resultError, setResultError] = useState<string | null>(null);
   const [testApiKey, setTestApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
@@ -601,7 +603,7 @@ data = '''${JSON.stringify({
 ${testApiKey ? `\napi_key = "${testApiKey}"` : ""}
 response = requests.post(url, data=data, headers={"Content-Type": "application/json"${authHeaderPython}})
 
-with open("output.png", "wb") as f:
+with open("output.bin", "wb") as f:
     f.write(response.content)
 `;
 
@@ -622,7 +624,7 @@ data = '''${JSON.stringify({
 ${displayApiKey ? `\napi_key = "${displayApiKey}"` : ""}
 response = requests.post(url, data=data, headers={"Content-Type": "application/json"${authHeaderPythonDisplay}})
 
-with open("output.png", "wb") as f:
+with open("output.bin", "wb") as f:
     f.write(response.content)
 `;
 
@@ -635,7 +637,8 @@ with open("output.png", "wb") as f:
 
   const handleRun = async () => {
     setIsGenerating(true);
-    setResultImage(null);
+    setResultUrl(null);
+    setResultContentType('');
     setResultError(null);
     
     const headers: any = { 'Content-Type': 'application/json' };
@@ -653,8 +656,10 @@ with open("output.png", "wb") as f:
         const err = await res.text();
         throw new Error(err || 'Generation failed');
       }
+      const contentType = res.headers.get('Content-Type') || 'application/octet-stream';
       const blob = await res.blob();
-      setResultImage(URL.createObjectURL(blob));
+      setResultContentType(contentType);
+      setResultUrl(URL.createObjectURL(blob));
     } catch (e: any) {
       setResultError(e.message);
     } finally {
@@ -720,7 +725,7 @@ with open("output.png", "wb") as f:
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <input 
                         type="file" 
-                        accept="image/*"
+                        accept={field.input_target === 'audio_upload' ? 'audio/*' : 'image/*'}
                         onChange={e => {
                           const file = e.target.files?.[0];
                           if (file) {
@@ -739,9 +744,9 @@ with open("output.png", "wb") as f:
                       type="text" 
                       value={params[field.exposed_as] || ''} 
                       onChange={e => setParams({ ...params, [field.exposed_as]: e.target.value })}
-                      placeholder="Or enter image URL / manual Base64..."
+                      placeholder={field.input_target === 'audio_upload' ? "Or enter audio URL / manual Base64..." : "Or enter image URL / manual Base64..."}
                       style={{ width: '100%' }}
-                    />
+                  />
                   </div>
                 ) : (
                   <input 
@@ -779,14 +784,32 @@ with open("output.png", "wb") as f:
             <strong>Error:</strong> {resultError}
           </div>
         )}
-        {resultImage && (
-          <div style={{ marginBottom: 20, textAlign: 'center' }}>
-            <img src={resultImage} style={{ maxWidth: '100%', maxHeight: '400px', borderRadius: 8, border: '1px solid var(--border-color)', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }} alt="Generated Result" />
-            <div style={{ marginTop: 10 }}>
-              <a href={resultImage} download="result.png" style={{ color: 'var(--accent)', fontSize: 14 }}>Download Image</a>
+        {resultUrl && (() => {
+          const is_audio = resultContentType.startsWith('audio/');
+          const get_ext = () => {
+            if (resultContentType.includes('audio/wav')) return 'wav';
+            if (resultContentType.includes('audio/mpeg')) return 'mp3';
+            if (resultContentType.includes('audio/flac')) return 'flac';
+            if (resultContentType.includes('audio/opus')) return 'opus';
+            if (resultContentType.includes('image/png')) return 'png';
+            if (resultContentType.includes('image/jpeg')) return 'jpg';
+            if (resultContentType.includes('image/webp')) return 'webp';
+            return 'bin';
+          };
+          const ext = get_ext();
+          return (
+            <div style={{ marginBottom: 20, textAlign: 'center' }}>
+              {is_audio ? (
+                <audio controls style={{ width: '100%', maxWidth: '500px' }} src={resultUrl} />
+              ) : (
+                <img src={resultUrl} style={{ maxWidth: '100%', maxHeight: '400px', borderRadius: 8, border: '1px solid var(--border-color)', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }} alt="Generated Result" />
+              )}
+              <div style={{ marginTop: 10 }}>
+                <a href={resultUrl} download={`result.${ext}`} style={{ color: 'var(--accent)', fontSize: 14 }}>{is_audio ? 'Download Audio' : 'Download Image'}</a>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', marginBottom: showSnippets ? 20 : 0 }}>
           <div style={{ display: 'flex' }}>
             <button 

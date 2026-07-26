@@ -17,6 +17,7 @@ pub enum FieldInputTarget {
     ImageBase64,
     ImageUrl,
     ComfyUpload,
+    AudioUpload,
 }
 
 impl Default for FieldInputTarget {

@@ -25,6 +25,31 @@ pub struct WsMessage {
     pub data: serde_json::Value,
 }
 
+/// Represents an output asset (image or audio) retrieved from ComfyUI.
+#[derive(Debug, Clone)]
+pub struct OutputAsset {
+    pub data: Vec<u8>,
+    pub content_type: String,
+    pub extension: String,
+}
+
+/// Derives the MIME content-type and file extension from a filename.
+pub fn derive_content_type(filename: &str) -> (String, String) {
+    let ext = filename.rsplit('.').next().unwrap_or("").to_lowercase();
+    match ext.as_str() {
+        "png"  => ("image/png".to_string(), "png".to_string()),
+        "jpg" | "jpeg" => ("image/jpeg".to_string(), "jpg".to_string()),
+        "webp" => ("image/webp".to_string(), "webp".to_string()),
+        "gif"  => ("image/gif".to_string(), "gif".to_string()),
+        "bmp"  => ("image/bmp".to_string(), "bmp".to_string()),
+        "wav"  => ("audio/wav".to_string(), "wav".to_string()),
+        "mp3"  => ("audio/mpeg".to_string(), "mp3".to_string()),
+        "flac" => ("audio/flac".to_string(), "flac".to_string()),
+        "opus" => ("audio/opus".to_string(), "opus".to_string()),
+        _      => ("application/octet-stream".to_string(), "bin".to_string()),
+    }
+}
+
 pub struct ComfyClient {
     base_url: String,
     http: Client,
@@ -40,7 +65,7 @@ impl ComfyClient {
         }
     }
 
-    pub async fn submit_prompt(&self, mut prompt_json: serde_json::Value) -> Result<Vec<u8>, String> {
+    pub async fn submit_prompt(&self, mut prompt_json: serde_json::Value) -> Result<Vec<OutputAsset>, String> {
         let client_id = Uuid::new_v4().to_string();
         
         // Find all SaveImageWebsocket nodes and prevent caching
@@ -78,7 +103,7 @@ impl ComfyClient {
             .map_err(|e| e.to_string())?;
 
         let prompt_res: ComfyPromptResponse = res.json().await.map_err(|e| e.to_string())?;
-        
+
         tracing::debug!("ComfyUI Response: {}", serde_json::to_string_pretty(&prompt_res).unwrap_or_else(|_| "Invalid JSON".to_string()));
         
         if let Some(errs) = prompt_res.node_errors {
@@ -96,7 +121,7 @@ impl ComfyClient {
         let (ws_stream, _) = connect_async(&ws_url).await.map_err(|e| e.to_string())?;
         let (_, mut read) = ws_stream.split();
 
-        let mut output_images = Vec::new();
+        let mut output_assets: Vec<OutputAsset> = Vec::new();
         let mut current_node = String::new();
 
         while let Some(msg) = read.next().await {
@@ -136,7 +161,11 @@ impl ComfyClient {
                         if bin_vec.len() > 8 {
                             // The first 8 bytes are type/meta, rest is image data
                             tracing::debug!("Captured image from WS node {}", current_node);
-                            output_images.push(bin_vec[8..].to_vec());
+                            output_assets.push(OutputAsset {
+                                data: bin_vec[8..].to_vec(),
+                                content_type: "image/png".to_string(),
+                                extension: "png".to_string(),
+                            });
                         }
                     }
                 }
@@ -144,7 +173,7 @@ impl ComfyClient {
             }
         }
 
-        // Fetch history for standard SaveImage nodes
+        // Fetch history for standard SaveImage / SaveAudio nodes
         let history_url = format!("{}/history/{}", self.base_url, prompt_id);
         if let Ok(res) = self.http.get(&history_url).send().await {
             if let Ok(history_json) = res.json::<serde_json::Value>().await {
@@ -152,6 +181,7 @@ impl ComfyClient {
                     if let Some(outputs) = history.get("outputs") {
                         if let Some(outputs_obj) = outputs.as_object() {
                             for (_node_id, node_output) in outputs_obj {
+                                // Check for images in history
                                 if let Some(images) = node_output.get("images") {
                                     if let Some(images_array) = images.as_array() {
                                         for image_info in images_array {
@@ -159,12 +189,45 @@ impl ComfyClient {
                                                 let subfolder = image_info["subfolder"].as_str().unwrap_or("");
                                                 let folder_type = image_info["type"].as_str().unwrap_or("output");
                                                 
-                                                let img_url = format!("{}/view?filename={}&subfolder={}&type={}", 
+                                                let (content_type, extension) = derive_content_type(filename);
+                                                let view_url = format!("{}/view?filename={}&subfolder={}&type={}", 
                                                     self.base_url, filename, subfolder, folder_type);
                                                 
-                                                if let Ok(res) = self.http.get(&img_url).send().await {
+                                                if let Ok(res) = self.http.get(&view_url).send().await {
                                                     if let Ok(bytes) = res.bytes().await {
-                                                        output_images.push(bytes.to_vec());
+                                                        tracing::debug!("Fetched {} from history", filename);
+                                                        output_assets.push(OutputAsset {
+                                                            data: bytes.to_vec(),
+                                                            content_type,
+                                                            extension,
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Check for audio in history (SaveAudio / SaveAudioAdvanced / SaveAudioMP3 / SaveAudioOpus)
+                                if let Some(audio) = node_output.get("audio") {
+                                    if let Some(audio_array) = audio.as_array() {
+                                        for audio_info in audio_array {
+                                            if let Some(filename) = audio_info["filename"].as_str() {
+                                                let subfolder = audio_info["subfolder"].as_str().unwrap_or("");
+                                                let folder_type = audio_info["type"].as_str().unwrap_or("output");
+                                                
+                                                let (content_type, extension) = derive_content_type(filename);
+                                                let view_url = format!("{}/view?filename={}&subfolder={}&type={}", 
+                                                    self.base_url, filename, subfolder, folder_type);
+                                                
+                                                if let Ok(res) = self.http.get(&view_url).send().await {
+                                                    if let Ok(bytes) = res.bytes().await {
+                                                        tracing::debug!("Fetched {} from history", filename);
+                                                        output_assets.push(OutputAsset {
+                                                            data: bytes.to_vec(),
+                                                            content_type,
+                                                            extension,
+                                                        });
                                                     }
                                                 }
                                             }
@@ -178,20 +241,21 @@ impl ComfyClient {
             }
         }
 
-        if output_images.is_empty() {
-            return Err("No images generated".to_string());
+        if output_assets.is_empty() {
+            return Err("No outputs generated".to_string());
         }
 
-        // Return the first image for synchronous API simplicity
-        Ok(output_images.remove(0))
+        Ok(output_assets)
     }
 
-    pub async fn upload_image(&self, image_bytes: Vec<u8>, filename: &str) -> Result<String, String> {
+    pub async fn upload_file(&self, file_bytes: Vec<u8>, filename: &str) -> Result<String, String> {
         let url = format!("{}/upload/image", self.base_url);
         
-        let part = reqwest::multipart::Part::bytes(image_bytes)
+        let (content_type, _) = derive_content_type(filename);
+        
+        let part = reqwest::multipart::Part::bytes(file_bytes)
             .file_name(filename.to_string())
-            .mime_str("image/png").unwrap_or_else(|_| reqwest::multipart::Part::bytes(vec![]));
+            .mime_str(&content_type).unwrap_or_else(|_| reqwest::multipart::Part::bytes(vec![]));
             
         let form = reqwest::multipart::Form::new()
             .part("image", part)
