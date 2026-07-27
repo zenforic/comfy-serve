@@ -349,6 +349,108 @@ pub fn get_workflows() -> Result<HashMap<String, serde_json::Value>, String> {
             }
         }
     }
-    Ok(workflows)
+        Ok(workflows)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn setup_test_dir() -> PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!("comfy_serve_test_{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn test_cleanup_basic() {
+        let root = setup_test_dir();
+        let file_path = root.join("test_image.png");
+        fs::write(&file_path, "data").unwrap();
+
+        ComfyClient::walk_and_cleanup(&root, &["test_image.png".to_string()]);
+        assert!(!file_path.exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_cleanup_recursive() {
+        let root = setup_test_dir();
+        let sub = root.join("subfolder");
+        fs::create_dir_all(&sub).unwrap();
+        let file_path = sub.join("test_image.png");
+        fs::write(&file_path, "data").unwrap();
+
+        ComfyClient::walk_and_cleanup(&root, &["test_image.png".to_string()]);
+        assert!(!file_path.exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_cleanup_no_match() {
+        let root = setup_test_dir();
+        let file_path = root.join("keep_me.png");
+        fs::write(&file_path, "data").unwrap();
+
+        ComfyClient::walk_and_cleanup(&root, &["delete_me.png".to_string()]);
+        assert!(file_path.exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_cleanup_multiple_files() {
+        let root = setup_test_dir();
+        let f1 = root.join("img1.png");
+        let f2 = root.join("img2.png");
+        fs::write(&f1, "data").unwrap();
+        fs::write(&f2, "data").unwrap();
+
+        ComfyClient::walk_and_cleanup(&root, &["img1.png".to_string(), "img2.png".to_string()]);
+        assert!(!f1.exists());
+        assert!(!f2.exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_cleanup_symlink_safety() {
+        let root = setup_test_dir();
+        let target_dir = setup_test_dir();
+        let target_file = target_dir.join("target.png");
+        fs::write(&target_file, "data").unwrap();
+
+        // Create symlink in root pointing to target_dir
+        if let Err(e) = std::os::windows::fs::symlink_dir(&target_dir, &root.join("link")) {
+            tracing::warn!("Skipping symlink test: {} (likely lacks privileges)", e);
+        } else {
+            ComfyClient::walk_and_cleanup(&root, &["target.png".to_string()]);
+            // The file in target_dir should NOT be deleted because the walker skips symlinks
+            assert!(target_file.exists());
+        }
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(&target_dir);
+    }
+
+    #[test]
+    fn test_cleanup_duplicate_filenames() {
+        let root = setup_test_dir();
+        let sub1 = root.join("dir1");
+        let sub2 = root.join("dir2");
+        fs::create_dir_all(&sub1).unwrap();
+        fs::create_dir_all(&sub2).unwrap();
+        
+        let f1 = sub1.join("same.png");
+        let f2 = sub2.join("same.png");
+        fs::write(&f1, "data").unwrap();
+        fs::write(&f2, "data").unwrap();
+
+        ComfyClient::walk_and_cleanup(&root, &["same.png".to_string()]);
+        assert!(!f1.exists());
+        assert!(!f2.exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+}
+
 
