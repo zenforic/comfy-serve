@@ -415,6 +415,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn test_cleanup_symlink_safety() {
         let root = setup_test_dir();
         let target_dir = setup_test_dir();
