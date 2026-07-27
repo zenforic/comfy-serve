@@ -53,6 +53,11 @@ struct Args {
     #[arg(long)]
     no_log_workflow: bool,
 
+    /// Search and remove files saved to disk by ComfyUI save nodes.
+    /// Paths resolve from the working directory unless absolute.
+    #[arg(long)]
+    cleanup: Option<String>,
+
     /// Expand binary payloads in debug logs instead of showing [binary/(type)]
     #[arg(long)]
     log_expand_binary: bool,
@@ -1142,7 +1147,29 @@ async fn main() {
         }
     }
 
-    let comfy_client = Arc::new(comfy::ComfyClient::new(config.comfyui_url.clone(), !args.no_log_workflow));
+    let comfy_client_url = config.comfyui_url.clone();
+    let log_workflow = !args.no_log_workflow;
+    
+    let cleanup_dir = if let Some(cleanup) = &args.cleanup {
+        let path = std::path::Path::new(cleanup);
+        let abs_path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            std::env::current_dir().unwrap().join(path)
+        };
+        
+        if abs_path.is_dir() {
+            tracing::info!("Disk cleanup enabled — searching '{}' for files saved by ComfyUI save nodes", abs_path.display());
+            Some(abs_path)
+        } else {
+            tracing::warn!("Cleanup path '{}' is not a directory — cleanup disabled", abs_path.display());
+            None
+        }
+    } else {
+        None
+    };
+
+    let comfy_client = Arc::new(comfy::ComfyClient::new(comfy_client_url, log_workflow, cleanup_dir));
     
     let hash = std::env::var("DASHBOARD_PASSWORD_HASH").unwrap_or_default().trim().to_string();
     

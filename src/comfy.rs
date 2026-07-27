@@ -31,6 +31,7 @@ pub struct OutputAsset {
     pub data: Vec<u8>,
     pub content_type: String,
     pub extension: String,
+    pub filename: Option<String>,
 }
 
 /// Derives the MIME content-type and file extension from a filename.
@@ -54,14 +55,16 @@ pub struct ComfyClient {
     base_url: String,
     http: Client,
     log_workflow: bool,
+    cleanup_dir: Option<std::path::PathBuf>,
 }
 
 impl ComfyClient {
-    pub fn new(base_url: String, log_workflow: bool) -> Self {
+    pub fn new(base_url: String, log_workflow: bool, cleanup_dir: Option<std::path::PathBuf>) -> Self {
         Self {
             base_url,
             http: Client::new(),
             log_workflow,
+            cleanup_dir,
         }
     }
 
@@ -165,6 +168,7 @@ impl ComfyClient {
                                 data: bin_vec[8..].to_vec(),
                                 content_type: "image/png".to_string(),
                                 extension: "png".to_string(),
+                                filename: None,
                             });
                         }
                     }
@@ -200,6 +204,7 @@ impl ComfyClient {
                                                             data: bytes.to_vec(),
                                                             content_type,
                                                             extension,
+                                                            filename: Some(filename.to_string()),
                                                         });
                                                     }
                                                 }
@@ -227,6 +232,7 @@ impl ComfyClient {
                                                             data: bytes.to_vec(),
                                                             content_type,
                                                             extension,
+                                                            filename: Some(filename.to_string()),
                                                         });
                                                     }
                                                 }
@@ -241,11 +247,61 @@ impl ComfyClient {
             }
         }
 
+        // Cleanup disk-saved files if enabled
+        if let Some(cleanup_dir) = &self.cleanup_dir {
+            let disk_filenames: Vec<String> = output_assets
+                .iter()
+                .filter_map(|a| a.filename.clone())
+                .collect::<std::collections::HashSet<_>>()
+                .into_iter()
+                .collect();
+
+            if !disk_filenames.is_empty() {
+                let dir = cleanup_dir.clone();
+                let filenames = disk_filenames;
+                tokio::task::spawn_blocking(move || {
+                    Self::walk_and_cleanup(&dir, &filenames);
+                });
+            }
+        }
+
         if output_assets.is_empty() {
             return Err("No outputs generated".to_string());
         }
 
         Ok(output_assets)
+    }
+
+    fn walk_and_cleanup(dir: &std::path::Path, filenames: &[String]) {
+        let set: std::collections::HashSet<&str> = filenames.iter().map(|s| s.as_str()).collect();
+        if let Err(e) = Self::walk_dir(dir, &set) {
+            tracing::warn!("Failed to walk cleanup directory '{}': {}", dir.display(), e);
+        }
+    }
+
+    fn walk_dir(dir: &std::path::Path, filenames: &std::collections::HashSet<&str>) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_symlink() {
+                continue;
+            }
+            if path.is_dir() {
+                if let Err(e) = Self::walk_dir(&path, filenames) {
+                    tracing::warn!("Failed to walk subdirectory '{}': {}", path.display(), e);
+                }
+            } else if path.is_file() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if filenames.contains(name) {
+                        match std::fs::remove_file(&path) {
+                            Ok(_) => tracing::debug!("Cleaned up disk file: {}", path.display()),
+                            Err(e) => tracing::warn!("Failed to remove '{}': {}", path.display(), e),
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     pub async fn upload_file(&self, file_bytes: Vec<u8>, filename: &str) -> Result<String, String> {

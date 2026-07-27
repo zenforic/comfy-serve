@@ -141,6 +141,7 @@ map_values = "0,0.9"
 - `-p, --port <PORT>`: Port to listen on (default: `3000`).
 - `--log-level debug`: Enables verbose debugging logs.
 - `--no-log-workflow`: Disables logging of the full ComfyUI JSON payload to the console when in debug mode, keeping the console clean while still logging the incoming frontend parameters.
+- `--cleanup <DIRECTORY>`: When specified, comfy-serve will search the given directory (resolved from the working directory unless absolute) for files saved to disk by ComfyUI `SaveImage` and `SaveAudio` nodes and delete them after retrieval, preventing disk clutter. Only effective when ComfyUI runs on the same machine. Cleanup is disabled if this flag is not provided.
 - `--log-expand-binary`: Expands binary payloads (like multipart forms) in the debug logs instead of showing `[binary/(type)]`.
 
 ## License

@@ -73,6 +73,7 @@ The frontend dashboard is optionally compiled into the binary via the `dashboard
 
 - `--log-level debug`: Enables verbose debugging logs.
 - `--no-log-workflow`: Disables logging of the full ComfyUI JSON payload to the console when in debug mode, keeping the console clean while still logging the incoming frontend parameters.
+- `--cleanup <DIRECTORY>`: Search and remove files saved to disk by ComfyUI save nodes.
 - `--host <HOST>`: Specifies the IP address to bind the API server to. Defaults to `127.0.0.1` but can be changed to `0.0.0.0` for external network access.
 - `-p, --port <PORT>`: Specifies the port to bind the API server to. Defaults to `3000`.
 
