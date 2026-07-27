@@ -628,11 +628,25 @@ with open("output.bin", "wb") as f:
     f.write(response.content)
 `;
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     const textToCopy = activeTab === 'curl' ? curlReq : pythonReq;
-    navigator.clipboard.writeText(textToCopy);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(textToCopy);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = textToCopy;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textArea);
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      console.error("Copy failed", e);
+      alert("Failed to copy to clipboard");
+    }
   };
 
   const handleRun = async () => {
