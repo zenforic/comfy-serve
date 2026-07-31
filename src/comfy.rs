@@ -71,13 +71,18 @@ impl ComfyClient {
     pub async fn submit_prompt(&self, mut prompt_json: serde_json::Value) -> Result<Vec<OutputAsset>, String> {
         let client_id = Uuid::new_v4().to_string();
         
-        // Find all SaveImageWebsocket nodes and prevent caching
+        // Find all Save nodes and prevent caching
         let mut ws_image_nodes = std::collections::HashSet::new();
         if let Some(obj) = prompt_json.as_object_mut() {
             for (node_id, node) in obj {
                 if let Some(class_type) = node.get("class_type").and_then(|c| c.as_str()) {
-                    if class_type == "SaveImageWebsocket" {
-                        ws_image_nodes.insert(node_id.clone());
+                    let is_ws_save = class_type == "SaveImageWebsocket";
+                    let is_disk_save = class_type.starts_with("SaveImage") || class_type.starts_with("SaveAudio");
+                    
+                    if is_ws_save || (is_disk_save && self.cleanup_dir.is_some()) {
+                        if is_ws_save {
+                            ws_image_nodes.insert(node_id.clone());
+                        }
                         // Inject a random string to inputs to prevent ComfyUI from caching this node
                         if let Some(inputs) = node.get_mut("inputs").and_then(|i| i.as_object_mut()) {
                             inputs.insert("comfy_serve_salt".to_string(), serde_json::json!(client_id.clone()));
