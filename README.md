@@ -88,6 +88,11 @@ DASHBOARD_PASSWORD_HASH=your_argon2_hash_here
 # Optional: A comma-separated list of API keys required to hit the image generation endpoints.
 # If left blank or unset, the generation endpoints will remain open and unprotected.
 API_KEYS=sk-mysecretkey,sk-anotherkey
+
+# Optional: A comma-separated list of allowed origins for browser-based CORS requests
+# (e.g. calling the API via fetch/XHR from a web app on a different domain).
+# If left blank or unset, no CORS headers are sent and cross-origin browser requests will fail.
+CORS_ORIGIN=https://example.com,https://another-app.example.com
 ```
 
 ## Manual Configuration (`config.toml`)
@@ -143,6 +148,7 @@ map_values = "0,0.9"
 - `--no-log-workflow`: Disables logging of the full ComfyUI JSON payload to the console when in debug mode, keeping the console clean while still logging the incoming frontend parameters.
 - `--cleanup <DIRECTORY>`: When specified, comfy-serve will search the given directory (resolved from the working directory unless absolute) for files saved to disk by ComfyUI `SaveImage` and `SaveAudio` nodes and delete them after retrieval, preventing disk clutter. Only effective when ComfyUI runs on the same machine. Cleanup is disabled if this flag is not provided.
 - `--log-expand-binary`: Expands binary payloads (like multipart forms) in the debug logs instead of showing `[binary/(type)]`.
+- `--cors-origin <ORIGIN>`: Allowed origin for browser CORS requests (e.g. `https://example.com`). Can be repeated or provided as a comma-separated list, and can also be set via the `CORS_ORIGIN` env var. If omitted, no CORS headers are sent, so cross-origin browser `fetch`/`XHR` calls to the API will fail (server-to-server calls, curl, etc. are unaffected since CORS is a browser-enforced mechanism). This is only needed when calling `comfy-serve` directly from a browser-based app hosted on a different origin; if a reverse proxy or edge service (e.g. Cloudflare Access) already handles CORS in front of comfy-serve, you don't need this flag.
 
 ## License
 MIT

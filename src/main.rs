@@ -20,6 +20,7 @@ use rust_embed::RustEmbed;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
 use crate::config::Config;
@@ -61,6 +62,11 @@ struct Args {
     /// Expand binary payloads in debug logs instead of showing [binary/(type)]
     #[arg(long)]
     log_expand_binary: bool,
+
+    /// Allowed CORS origin(s) for browser cross-origin requests (repeatable).
+    /// If omitted, no CORS headers are sent and cross-origin browser requests will fail.
+    #[arg(long, env = "CORS_ORIGIN", value_delimiter = ',')]
+    cors_origin: Vec<String>,
 }
 
 #[cfg(feature = "dashboard")]
@@ -1230,6 +1236,34 @@ async fn main() {
     app = app
         .layer(axum::extract::DefaultBodyLimit::disable())
         .layer(axum::middleware::from_fn_with_state(state.clone(), request_logger));
+
+    if args.cors_origin.is_empty() {
+        tracing::warn!(
+            "No --cors-origin configured; cross-origin browser requests (fetch/XHR) to this API will fail CORS. \
+             Set --cors-origin (or CORS_ORIGIN env var, comma-separated) to the origin(s) that should be allowed."
+        );
+    } else {
+        let origins: Vec<axum::http::HeaderValue> = args
+            .cors_origin
+            .iter()
+            .filter_map(|o| match o.parse::<axum::http::HeaderValue>() {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    tracing::warn!("Ignoring invalid --cors-origin value '{}': {}", o, e);
+                    None
+                }
+            })
+            .collect();
+
+        let cors = CorsLayer::new()
+            .allow_origin(origins)
+            .allow_methods(Any)
+            .allow_headers(Any);
+
+        // Outermost layer so OPTIONS preflights are answered before hitting
+        // route method-matching (which would otherwise 405) or other middleware.
+        app = app.layer(cors);
+    }
 
     let host_addr: std::net::IpAddr = args.host.parse().expect("Invalid IP address for --host");
     let addr = SocketAddr::from((host_addr, args.port));
