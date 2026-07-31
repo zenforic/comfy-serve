@@ -82,7 +82,9 @@ The frontend dashboard is optionally compiled into the binary via the `dashboard
 
 `SaveImageWebsocket` nodes in ComfyUI do not write to the disk/history, meaning if ComfyUI caches the node execution, the binary image is never transmitted over the WebSocket. To fix this, `comfy-serve` dynamically intercepts all incoming workflows, identifies any `SaveImageWebsocket` nodes, and injects a randomized `comfy_serve_salt` hidden input. This forces the node to bypass ComfyUI's cache entirely and always execute, guaranteeing that images are delivered to the proxy.
 
-Note: Standard `SaveImage` and `SaveAudio` nodes (including `SaveAudioAdvanced`, `SaveAudioMP3`, `SaveAudioOpus`) write to disk and appear in ComfyUI's history. These are retrieved after execution completes via the `/history/<prompt_id>` and `/view` endpoints. Audio outputs are detected via the `"audio"` key in the history output and their format (mp3, flac, opus, wav) is derived from the filename extension. No cache-busting salt is needed for these nodes since they always write to disk.
+Note: Standard `SaveImage` and `SaveAudio` nodes (including `SaveAudioAdvanced`, `SaveAudioMP3`, `SaveAudioOpus`) write to disk and appear in ComfyUI's history. These are retrieved after execution completes via the `/history/<prompt_id>` and `/view` endpoints. Audio outputs are detected via the `"audio"` key in the history output and their format (mp3, flac, opus, wav) is derived from the filename extension. 
+
+To prevent issues where files are deleted via `--cleanup` but ComfyUI caches the execution (resulting in missing files), `comfy-serve` also applies the cache-busting salt to all disk-saving nodes if `--cleanup` is enabled. Otherwise, these nodes rely on ComfyUI's default caching behavior.
 
 ## Future Work
 

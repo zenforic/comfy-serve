@@ -6,7 +6,7 @@ Comfy-Serve is a high-performance Rust proxy server and React dashboard designed
 
 - **React Dashboard**: An elegant dusk-themed dashboard to visually map complex ComfyUI nodes (e.g., KSampler seed, positive prompt, CFG scale) to simple API parameters.
 - **LLM Assisted Restructuring**: Automatically analyze and expose workflow variables using an optional OpenAI-compatible LLM endpoint.
-- **Dynamic Caching Bypass**: Automatically forces ComfyUI's `SaveImageWebsocket` nodes to execute every time without cluttering disk history, ensuring smooth image delivery.
+- **Dynamic Caching Bypass**: Automatically forces ComfyUI's `SaveImageWebsocket` nodes (and disk-saving nodes when `--cleanup` is enabled) to execute every time, ensuring reliable asset delivery without missing files from disk.
 - **Audio Support**: Supports ComfyUI audio workflows via `SaveAudio` nodes. Audio outputs (wav, mp3, flac, opus) are automatically detected and returned with the correct `Content-Type`. Audio inputs are uploaded to ComfyUI for use with `LoadAudio` nodes.
 - **OpenAI Compatible Endpoint**: Drop-in replacement for OpenAI's image generation API. Route your existing AI apps to Comfy-Serve effortlessly.
 
