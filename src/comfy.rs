@@ -56,15 +56,17 @@ pub struct ComfyClient {
     http: Client,
     log_workflow: bool,
     cleanup_dir: Option<std::path::PathBuf>,
+    cleanup_input_dir: Option<std::path::PathBuf>,
 }
 
 impl ComfyClient {
-    pub fn new(base_url: String, log_workflow: bool, cleanup_dir: Option<std::path::PathBuf>) -> Self {
+    pub fn new(base_url: String, log_workflow: bool, cleanup_dir: Option<std::path::PathBuf>, cleanup_input_dir: Option<std::path::PathBuf>) -> Self {
         Self {
             base_url,
             http: Client::new(),
             log_workflow,
             cleanup_dir,
+            cleanup_input_dir,
         }
     }
 
@@ -307,6 +309,16 @@ impl ComfyClient {
             }
         }
         Ok(())
+    }
+
+    pub async fn cleanup_files(&self, filenames: &[String]) {
+        if let Some(dir) = &self.cleanup_input_dir {
+            let dir = dir.clone();
+            let filenames = filenames.to_vec();
+            tokio::task::spawn_blocking(move || {
+                Self::walk_and_cleanup(&dir, &filenames);
+            });
+        }
     }
 
     pub async fn upload_file(&self, file_bytes: Vec<u8>, filename: &str) -> Result<String, String> {

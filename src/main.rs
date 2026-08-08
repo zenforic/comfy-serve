@@ -59,6 +59,11 @@ struct Args {
     #[arg(long)]
     cleanup: Option<String>,
 
+    /// Search and remove temporary uploaded files from ComfyUI input directory.
+    /// Paths resolve from the working directory unless absolute.
+    #[arg(long)]
+    cleanup_input: Option<String>,
+
     /// Expand binary payloads in debug logs instead of showing [binary/(type)]
     #[arg(long)]
     log_expand_binary: bool,
@@ -274,6 +279,7 @@ async fn generate_handler(State(state): State<AppState>, headers: axum::http::He
     };
 
     let mut temp_cleanup_ids = Vec::new();
+    let mut uploaded_files = Vec::new();
     let host_header = headers.get("host").and_then(|h| h.to_str().ok());
 
     // Required checks and apply mappings
@@ -295,6 +301,10 @@ async fn generate_handler(State(state): State<AppState>, headers: axum::http::He
             if field_map.input_target != crate::config::FieldInputTarget::Text {
                 match process_image_input(&incoming_str, &field_map.input_target, &state.comfy_client, &state.temp_images, host_header).await {
                     Ok((processed_str, temp_id)) => {
+                        if field_map.input_target == crate::config::FieldInputTarget::ComfyUpload 
+                            || field_map.input_target == crate::config::FieldInputTarget::AudioUpload {
+                            uploaded_files.push(processed_str.clone());
+                        }
                         final_val = serde_json::Value::String(processed_str);
                         if let Some(id) = temp_id {
                             temp_cleanup_ids.push(id);
@@ -562,6 +572,7 @@ async fn openai_edits_handler(
     
     let host_header = headers.get("host").and_then(|h| h.to_str().ok());
     let mut temp_cleanup_ids = Vec::new();
+    let mut uploaded_files = Vec::new();
 
     for field_map in &wf_config.exposed_fields {
         let mut final_val = None;
@@ -571,6 +582,10 @@ async fn openai_edits_handler(
         } else if field_map.exposed_as == "image" {
             match process_raw_image_bytes(image_bytes.clone(), &field_map.input_target, &state.comfy_client, &state.temp_images, host_header).await {
                 Ok((res_val, cleanup_id)) => {
+                    if field_map.input_target == crate::config::FieldInputTarget::ComfyUpload 
+                        || field_map.input_target == crate::config::FieldInputTarget::AudioUpload {
+                        uploaded_files.push(res_val.clone());
+                    }
                     final_val = Some(serde_json::Value::String(res_val));
                     if let Some(id) = cleanup_id {
                         temp_cleanup_ids.push(id);
@@ -594,9 +609,12 @@ async fn openai_edits_handler(
 
     let submit_result = state.comfy_client.submit_prompt(wf_json).await;
 
-    // Cleanup temp hosted images
+    // Cleanup temp hosted images and uploaded files
     for id in temp_cleanup_ids {
         state.temp_images.write().await.remove(&id);
+    }
+    if !uploaded_files.is_empty() {
+        state.comfy_client.cleanup_files(&uploaded_files).await;
     }
 
     match submit_result {
@@ -1175,7 +1193,26 @@ async fn main() {
         None
     };
 
-    let comfy_client = Arc::new(comfy::ComfyClient::new(comfy_client_url, log_workflow, cleanup_dir));
+    let cleanup_input_dir = if let Some(cleanup_in) = &args.cleanup_input {
+        let path = std::path::Path::new(cleanup_in);
+        let abs_path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            std::env::current_dir().unwrap().join(path)
+        };
+
+        if abs_path.is_dir() {
+            tracing::info!("Input cleanup enabled — searching '{}' for temporary upload files", abs_path.display());
+            Some(abs_path)
+        } else {
+            tracing::warn!("Input cleanup path '{}' is not a directory — cleanup disabled", abs_path.display());
+            None
+        }
+    } else {
+        None
+    };
+
+    let comfy_client = Arc::new(comfy::ComfyClient::new(comfy_client_url, log_workflow, cleanup_dir, cleanup_input_dir));
     
     let hash = std::env::var("DASHBOARD_PASSWORD_HASH").unwrap_or_default().trim().to_string();
     
