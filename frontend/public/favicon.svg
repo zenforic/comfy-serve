@@ -43,23 +43,21 @@
         fill="url(#blackGrad)" />
   
   <!-- '1' on the bottom left (black) side. -->
-  <text x="38" y="74" 
+  <text x="38" y="88" 
         font-family="Arial, sans-serif" 
         font-size="40" 
         font-weight="900" 
         fill="#00ffff" 
         text-anchor="middle" 
-        alignment-baseline="central"
         filter="url(#text-shadow)">1</text>
   
   <!-- '0' on the top right (cyan) side. -->
-  <text x="62" y="26" 
+  <text x="62" y="40" 
         font-family="Arial, sans-serif" 
         font-size="40" 
         font-weight="900" 
         fill="#000000" 
         text-anchor="middle" 
-        alignment-baseline="central"
         filter="url(#text-shadow)">0</text>
   
   <!-- Thick outer bevel rim to make it noticeably raised -->
