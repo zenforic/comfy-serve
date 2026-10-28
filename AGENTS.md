@@ -79,6 +79,7 @@ A `build.rs` script ensures `frontend/dist` exists and is up to date before `rus
 - On Windows, npm is spawned via `cmd /C npm` (npm is a `.cmd` shim).
 - If npm/Node.js is unavailable when a build is needed, the build fails with an actionable message (install Node, use `--no-default-features`, or pre-build manually + `COMFY_SERVE_SKIP_FRONTEND=1`).
 - `COMFY_SERVE_SKIP_FRONTEND=1` force-skips the npm build (offline/cross-compile escape hatch); an empty `frontend/dist` is created so the crate still compiles.
+- Windows-only: `build.rs` also embeds the executable icon (`resources/comfy-serve.ico`) and version info (product name, description, version, MIT copyright) via `winres` on Windows targets. Linux/macOS binaries carry no embedded icon.
 
 ## Cargo Features
 

@@ -8,6 +8,7 @@ license = "MIT"
 keywords = ["api", "comfyui", "comfy-ui", "http", "fastapi"]
 categories = ["api-bindings", "command-line-utilities", "web-programming::http-server", "web-programming::http-client"]
 repository = "https://github.com/zenforic/comfy-serve"
+authors = ["zenforic"]
 
 [dependencies]
 argon2 = "0.5.3"
@@ -30,6 +31,9 @@ toml = "1.1.2"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 uuid = { version = "1.23.2", features = ["v4"] }
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1.12"
 
 [profile.release]
 opt-level = 3

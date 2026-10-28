@@ -24,6 +24,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn main() {
+    embed_windows_resource();
+
     println!("cargo:rerun-if-env-changed=COMFY_SERVE_SKIP_FRONTEND");
     println!("cargo:rerun-if-changed=build.rs");
 
@@ -138,6 +140,43 @@ fn main() {
         );
     }
 }
+
+/// Windows-only: embeds the application icon and version info into the
+/// executable (Explorer icon, file properties, task manager). Linux and macOS
+/// binaries do not embed icons, so this is a no-op on other targets.
+#[cfg(windows)]
+fn embed_windows_resource() {
+    println!("cargo:rerun-if-changed=resources/comfy-serve.ico");
+
+    // WindowsResource::new() already populates FILEVERSION/PRODUCTVERSION and
+    // the FileVersion/ProductVersion strings from CARGO_PKG_VERSION*.
+    let version = env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.0.0".to_string());
+
+    let mut res = winres::WindowsResource::new();
+    res.set_icon("resources/comfy-serve.ico");
+    res.set("ProductName", "comfy-serve");
+    res.set("FileDescription", env!("CARGO_PKG_DESCRIPTION"));
+    res.set("FileVersion", &version);
+    res.set("ProductVersion", &version);
+    res.set(
+        "LegalCopyright",
+        &format!("MIT License - {}", env!("CARGO_PKG_AUTHORS")),
+    );
+    res.set("OriginalFilename", "comfy-serve.exe");
+
+    if let Err(err) = res.compile() {
+        eprintln!(
+            "error: failed to compile the Windows executable resources ({err}).\n\
+             This usually means the Windows resource compiler (rc.exe / windres) \n\
+             could not be found for the {} target.",
+            env::var("TARGET").unwrap_or_else(|_| "?".to_string())
+        );
+        std::process::exit(1);
+    }
+}
+
+#[cfg(not(windows))]
+fn embed_windows_resource() {}
 
 /// Runs `npm <args>` in `dir`, returning the exit status (None if npm could
 /// not be spawned at all).
