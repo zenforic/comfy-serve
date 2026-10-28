@@ -26,23 +26,26 @@ Comfy-Serve is a high-performance Rust proxy server and React dashboard designed
 You can download pre-built binaries for Windows and Linux from the [GitHub Releases](https://github.com/zenforic/comfy-serve/releases). These binaries come with the compiled React dashboard out of the box.
 
 **2. Install via Crates.io**
-If you want to install Comfy-Serve globally via Cargo, you can install it directly from crates.io. 
-*Note: Because the crate does not ship with the compiled React frontend assets, you must install the headless version (without the dashboard) by disabling default features.*
+You can install Comfy-Serve globally directly from crates.io:
+```bash
+cargo install comfy-serve
+```
+The crate ships the frontend *sources*, not the compiled assets, so a default install uses your installed Node.js/npm to build the dashboard automatically during the Cargo build (a `build.rs` script runs `npm ci`/`npm install` and `npm run build`). You can also skip that step entirely and install the headless version (no dashboard) by disabling default features:
 ```bash
 cargo install comfy-serve --no-default-features
 ```
-To install with the dashboard from source, see the instructions below.
+If npm is not found and the dist folder is missing or outdated, the build stops with a clear error explaining your options (install Node.js, use `--no-default-features`, or pre-build the frontend manually and set `COMFY_SERVE_SKIP_FRONTEND=1`).
 
 ### Building and Running from Source
 
-1. **Build the Frontend**:
+1. **Build the Frontend** (optional — `cargo build` does this for you automatically via `build.rs`):
    ```bash
    cd frontend
    npm install
    npm run build
    cd ..
    ```
-   *Note: Building the frontend is required before compiling the Rust server, as the frontend assets are embedded directly into the binary using `rust-embed`.*
+   *Note: The frontend assets are embedded directly into the Rust binary using `rust-embed`, so they must exist before compilation finishes. `build.rs` handles this: it rebuilds the frontend only when `frontend/dist` is missing or out of date, and skips everything when built with `--no-default-features`. Set `COMFY_SERVE_SKIP_FRONTEND=1` to force-skip the npm build (useful offline or for cross-compiling; the binary will embed whatever `frontend/dist` already contains).
 
 2. **Run the Server**:
    ```bash

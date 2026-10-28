@@ -26,7 +26,7 @@ If you need to make changes to the dashboard UI:
 - **Theme Constraints**: The dashboard utilizes pre-defined CSS classes for interactive elements to maintain its custom styling. Avoid inline styles for buttons. Use `.accent-btn` for primary actions, `.secondary-btn` for standard actions, `.danger-btn` for destructive actions, and `.flat-btn` for text-only/tab buttons.
 1. Navigate to `frontend/`.
 2. Run `npm run dev` to test your changes independently (you will need to mock API responses if the backend is not running or proxy the Vite server).
-3. **CRITICAL**: When you are done editing the frontend, you **MUST** run `npm run build` inside `frontend/`. If you don't build the frontend, `rust-embed` will not pick up the changes during the Cargo build process, and the binary will contain outdated assets.
+3. **CRITICAL**: When you are done editing the frontend, you **MUST** run `npm run build` inside `frontend/` (or simply run `cargo build`, which now auto-builds a stale frontend via `build.rs`). If you don't build the frontend, `rust-embed` will not pick up the changes during the Cargo build process, and the binary will contain outdated assets.
 
 ## API Endpoints
 
@@ -70,6 +70,15 @@ The dashboard allows automated field extraction using an OpenAI-compatible endpo
 - Handled by `src/llm.rs` and the `POST /api/restructure` endpoint.
 - Accepts a workflow JSON and user prompt, and wraps it in a strict system prompt demanding a JSON array matching the `WorkflowFieldMap` layout.
 - The user can optionally override the target Model string from the popup. If left blank in the onboarding config, the `model` parameter is intentionally omitted from the HTTP request to maximize compatibility with local servers like vLLM.
+
+## Auto-Building the Frontend (`build.rs`)
+
+A `build.rs` script ensures `frontend/dist` exists and is up to date before `rust-embed` compiles:
+- Skipped entirely when the `dashboard` feature is disabled (`--no-default-features`).
+- Runs `npm ci` (falling back to `npm install`) only when `frontend/node_modules` is missing, then `npm run build` — but only when `frontend/dist/index.html` is missing or older than any frontend source file.
+- On Windows, npm is spawned via `cmd /C npm` (npm is a `.cmd` shim).
+- If npm/Node.js is unavailable when a build is needed, the build fails with an actionable message (install Node, use `--no-default-features`, or pre-build manually + `COMFY_SERVE_SKIP_FRONTEND=1`).
+- `COMFY_SERVE_SKIP_FRONTEND=1` force-skips the npm build (offline/cross-compile escape hatch); an empty `frontend/dist` is created so the crate still compiles.
 
 ## Cargo Features
 
