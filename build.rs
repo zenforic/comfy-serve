@@ -162,6 +162,7 @@ fn embed_windows_resource() {
         "LegalCopyright",
         &format!("MIT License - {}", env!("CARGO_PKG_AUTHORS")),
     );
+    res.set("CompanyName", env!("CARGO_PKG_AUTHORS"));
     res.set("OriginalFilename", "comfy-serve.exe");
 
     if let Err(err) = res.compile() {
