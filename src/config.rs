@@ -45,11 +45,23 @@ pub struct WorkflowFieldMap {
     pub map_values: String,
 }
 
+/// Describes how optional input images are wired into a workflow: for every image a
+/// `LoadImage` node is added and linked to `<field_prefix><N>` of node `node_id`.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ImageInputsConfig {
+    pub node_id: String,
+    pub field_prefix: String,
+    #[serde(default)]
+    pub max_images: Option<usize>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct WorkflowConfig {
     pub active: bool,
     pub file_name: String,
     pub exposed_fields: Vec<WorkflowFieldMap>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_inputs: Option<ImageInputsConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -121,5 +133,17 @@ mod tests {
         let deserialized: WorkflowFieldMap = toml::from_str(old_toml).unwrap();
         assert_eq!(deserialized.input_target, FieldInputTarget::Text);
     }
-}
 
+    #[test]
+    fn test_image_inputs_optional() {
+        let old: WorkflowConfig = toml::from_str("active = true\nfile_name = \"a\"\nexposed_fields = []").unwrap();
+        assert!(old.image_inputs.is_none());
+
+        let new: WorkflowConfig = toml::from_str(
+            "active = true\nfile_name = \"a\"\nexposed_fields = []\n[image_inputs]\nnode_id = \"prompt\"\nfield_prefix = \"images.image_\"\nmax_images = 3",
+        ).unwrap();
+        let cfg = new.image_inputs.unwrap();
+        assert_eq!(cfg.node_id, "prompt");
+        assert_eq!(cfg.max_images, Some(3));
+    }
+}

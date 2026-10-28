@@ -56,6 +56,14 @@ Workflow configurations in `config.toml` allow mapping fields using the `Workflo
   - `audio_upload`: Audio bytes (from URL or Base64) are uploaded to ComfyUI's `/upload/image` API with a temp `.wav` filename and `overwrite=true`. ComfyUI's upload endpoint does not validate file type, so audio files are accepted. The returned filename is injected into a ComfyUI `LoadAudio` node. This is the only input method for audio since `LoadAudio` loads exclusively from the input directory.
 - **`is_value_map` / `map_keys` / `map_values`**: Maps incoming API strings/booleans/numbers to specific ComfyUI values. The API evaluates `map_keys` (comma-separated), matches the incoming string's index, and casts the corresponding string in `map_values` to the native JSON type required by the workflow (e.g. mapping `"true,false"` to `"0,0.9"`).
 
+## Optional Input Images (`image_inputs`)
+
+A workflow can accept any number of optional reference images without fixed `LoadImage` nodes. Set `[workflows.<name>.image_inputs]` in `config.toml` (`node_id`, `field_prefix`, optional `max_images`; also editable in the dashboard via "Supports input images").
+- `POST /api/generate` accepts `params.images` (array of URLs/Base64). Each image is uploaded to ComfyUI, a `reference_N` `LoadImage` node is added to the workflow on the fly and linked as `[reference_N, 0]` to `<node_id>.inputs.<field_prefix>N` (e.g. `prompt.images.image_1`). Sending `images` to a workflow without `image_inputs` returns `400`.
+- `POST /v1/images/edits` routes all `image`/`image[]` parts through the same mechanism when `image_inputs` is set.
+- `GET /api/models` reports `supports_images`.
+- Uploaded files are removed afterwards when `--cleanup-input` is set.
+
 ## LLM Assisted Restructure
 
 The dashboard allows automated field extraction using an OpenAI-compatible endpoint.

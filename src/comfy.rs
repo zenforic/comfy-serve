@@ -194,6 +194,14 @@ impl ComfyClient {
                 Message::Text(text) => {
                     if let Ok(ws_msg) = serde_json::from_str::<WsMessage>(&text) {
                         tracing::debug!("WS Text: {}", text);
+                        if ws_msg.r#type == "execution_error" {
+                            let data = &ws_msg.data;
+                            if data.get("prompt_id").and_then(|id| id.as_str()) == Some(&prompt_id) {
+                                let node = data.get("node_type").and_then(|n| n.as_str()).unwrap_or("unknown");
+                                let msg = data.get("exception_message").and_then(|m| m.as_str()).unwrap_or("unknown error").trim();
+                                return Err(format!("ComfyUI execution error in {}: {}", node, msg));
+                            }
+                        }
                         if ws_msg.r#type == "executing" {
                             let data = ws_msg.data;
                             let msg_prompt_id = data.get("prompt_id").and_then(|id| id.as_str());

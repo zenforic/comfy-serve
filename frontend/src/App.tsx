@@ -383,6 +383,39 @@ function WorkspaceEditor({ wf, wfJson, config, setConfig }: any) {
           <button className="accent-btn" onClick={() => setShowPopup(true)}>Restructure (Assisted)</button>
         </div>
 
+        <div className="panel" style={{ marginTop: 20 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input type="checkbox" checked={!!wfConfig?.image_inputs} onChange={e => {
+              const image_inputs = e.target.checked ? { node_id: '', field_prefix: 'images.image_', max_images: null } : undefined;
+              setConfig({ ...config, workflows: { ...config.workflows, [wf]: { ...(wfConfig || { active: true, file_name: wf, exposed_fields: [] }), image_inputs } } });
+            }} />
+            Supports input images
+          </label>
+          {wfConfig?.image_inputs && (
+            <div className="form-group" style={{ flexDirection: 'row', gap: 15, marginTop: 10 }}>
+              <div>
+                <label style={{ fontSize: 12, display: 'block' }}>Node ID</label>
+                <input type="text" style={{ width: 80 }} value={wfConfig.image_inputs.node_id} onChange={e => {
+                  setConfig({ ...config, workflows: { ...config.workflows, [wf]: { ...wfConfig, image_inputs: { ...wfConfig.image_inputs, node_id: e.target.value } } } });
+                }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, display: 'block' }}>Field prefix</label>
+                <input type="text" style={{ width: 140 }} value={wfConfig.image_inputs.field_prefix} onChange={e => {
+                  setConfig({ ...config, workflows: { ...config.workflows, [wf]: { ...wfConfig, image_inputs: { ...wfConfig.image_inputs, field_prefix: e.target.value } } } });
+                }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, display: 'block' }}>Max images</label>
+                <input type="number" min={1} style={{ width: 70 }} value={wfConfig.image_inputs.max_images ?? ''} onChange={e => {
+                  const v = e.target.value === '' ? null : parseInt(e.target.value, 10);
+                  setConfig({ ...config, workflows: { ...config.workflows, [wf]: { ...wfConfig, image_inputs: { ...wfConfig.image_inputs, max_images: v } } } });
+                }} />
+              </div>
+            </div>
+          )}
+        </div>
+
         <div style={{ marginTop: 30 }}>
           {wfConfig?.exposed_fields?.map((field: any, idx: number) => (
             <div key={idx} className="panel" style={{ marginBottom: 15 }}>

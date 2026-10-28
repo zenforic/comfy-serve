@@ -8,6 +8,8 @@ Comfy-Serve is a high-performance Rust proxy server and React dashboard designed
 - **LLM Assisted Restructuring**: Automatically analyze and expose workflow variables using an optional OpenAI-compatible LLM endpoint.
 - **Dynamic Caching Bypass**: Automatically forces ComfyUI's `SaveImageWebsocket` nodes (and disk-saving nodes when `--cleanup` is enabled) to execute every time, ensuring reliable asset delivery without missing files from disk.
 - **Audio Support**: Supports ComfyUI audio workflows via `SaveAudio` nodes. Audio outputs (wav, mp3, flac, opus) are automatically detected and returned with the correct `Content-Type`. Audio inputs are uploaded to ComfyUI for use with `LoadAudio` nodes.
+- **Optional Reference Images**: A workflow can declare an `image_inputs` mapping to accept any number of optional reference images without needing fixed `LoadImage` nodes. Each incoming image is uploaded to ComfyUI and automatically injected and wired into the workflow as its own `LoadImage` node.
+- **Disconnect-Aware Cancellation**: If the client aborts a request mid-generation (Ctrl+C, timeout, closed tab), the queued or running ComfyUI job is automatically cancelled so GPU time isn't wasted, and temporary uploads and hosted images are still cleaned up.
 - **OpenAI Compatible Endpoint**: Drop-in replacement for OpenAI's image generation API. Route your existing AI apps to Comfy-Serve effortlessly.
 
 ## Getting Started
@@ -60,15 +62,15 @@ To expose a ComfyUI workflow via the API:
 
 ## API Endpoints
 
-- `GET /api/models` - Lists active configured workflows and their required parameters.
-- `POST /api/generate` - The main custom generation endpoint. Supports both image and audio workflows; the response `Content-Type` is set dynamically based on the output type.
+- `GET /api/models` - Lists active configured workflows and their required parameters, including a `supports_images` flag for workflows that accept reference images via `image_inputs`.
+- `POST /api/generate` - The main custom generation endpoint. Supports both image and audio workflows; the response `Content-Type` is set dynamically based on the output type. Workflows configured with `image_inputs` also accept an optional `params.images` array (each entry a URL or Base64 string, optionally a `data:` URI); the images are uploaded to ComfyUI and injected as `LoadImage` nodes. Sending `images` to a workflow without `image_inputs` returns `400`.
 ### OpenAI Compatible API
 
 You can use standard OpenAI client libraries to interface with `comfy-serve` by pointing the base URL to your `comfy-serve` instance.
 
 - **`GET /v1/models`**: Returns all active workflows as available models.
 - **`POST /v1/images/generations`**: Acts as a drop-in replacement for DALL-E generation. Maps the requested `prompt` JSON string to whichever node you exposed as `prompt`.
-- **`POST /v1/images/edits`**: Acts as a drop-in replacement for DALL-E editing. Accepts `multipart/form-data` uploads, mapping the `prompt` string to the `prompt` node, and the `image` file binary to the `image` node.
+- **`POST /v1/images/edits`**: Acts as a drop-in replacement for DALL-E editing. Accepts `multipart/form-data` uploads, mapping the `prompt` string to the `prompt` node, and the `image` file binary to the `image` node. When the target workflow is configured with `image_inputs`, all `image` / `image[]` parts are forwarded as reference images instead (respecting `max_images`).
 
 ## Environment Configuration
 
@@ -137,6 +139,16 @@ required = false
 is_value_map = true
 map_keys = "true,false"
 map_values = "0,0.9"
+
+# Optional: accept optional reference images (params.images on /api/generate,
+# or multiple image parts on /v1/images/edits) without fixed LoadImage nodes.
+# Each image is uploaded to ComfyUI and wired as [reference_N, 0] into
+# <node_id>.inputs.<field_prefix><N> (e.g. images.image_1, images.image_2, ...).
+# Also editable in the dashboard via the "Supports input images" panel.
+[workflows."my-workflow.json".image_inputs]
+node_id = "7"                    # Node whose inputs receive the image links
+field_prefix = "images.image_"   # Field naming pattern for the incoming images
+max_images = 4                   # Optional cap; omit to allow any number
 ```
 
 ## CLI Options
@@ -147,7 +159,7 @@ map_values = "0,0.9"
 - `--log-level debug`: Enables verbose debugging logs.
 - `--no-log-workflow`: Disables logging of the full ComfyUI JSON payload to the console when in debug mode, keeping the console clean while still logging the incoming frontend parameters.
 - `--cleanup <DIRECTORY>`: When specified, comfy-serve will search the given directory (resolved from the working directory unless absolute) for files saved to disk by ComfyUI `SaveImage` and `SaveAudio` nodes and delete them after retrieval, preventing disk clutter. Only effective when ComfyUI runs on the same machine. Cleanup is disabled if this flag is not provided.
-- `--cleanup-input <DIRECTORY>`: When specified, comfy-serve will search the given directory (resolved from the working directory unless absolute) for temporary files uploaded to ComfyUI's input folder and delete them after the request completes. This prevents the ComfyUI input directory from piling up with `comfy_serve_temp` images and audio files during edit workflows.
+- `--cleanup-input <DIRECTORY>`: When specified, comfy-serve will search the given directory (resolved from the working directory unless absolute) for temporary files uploaded to ComfyUI's input folder and delete them after the request completes — including when the request ends early or the client disconnects mid-generation. This prevents the ComfyUI input directory from piling up with `comfy_serve_temp` images and audio files during edit workflows and `params.images` generation.
 - `--log-expand-binary`: Expands binary payloads (like multipart forms) in the debug logs instead of showing `[binary/(type)]`.
 - `--cors-origin <ORIGIN>`: Allowed origin for browser CORS requests (e.g. `https://example.com`). Can be repeated or provided as a comma-separated list, and can also be set via the `CORS_ORIGIN` env var. If omitted, no CORS headers are sent, so cross-origin browser `fetch`/`XHR` calls to the API will fail (server-to-server calls, curl, etc. are unaffected since CORS is a browser-enforced mechanism). This is only needed when calling `comfy-serve` directly from a browser-based app hosted on a different origin; if a reverse proxy or edge service (e.g. Cloudflare Access) already handles CORS in front of comfy-serve, you don't need this flag.
 
