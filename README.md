@@ -74,6 +74,7 @@ You can use standard OpenAI client libraries to interface with `comfy-serve` by 
 - **`GET /v1/models`**: Returns all active workflows as available models.
 - **`POST /v1/images/generations`**: Acts as a drop-in replacement for DALL-E generation. Maps the requested `prompt` JSON string to whichever node you exposed as `prompt`.
 - **`POST /v1/images/edits`**: Acts as a drop-in replacement for DALL-E editing. Accepts `multipart/form-data` uploads, mapping the `prompt` string to the `prompt` node, and the `image` file binary to the `image` node. When the target workflow is configured with `image_inputs`, all `image` / `image[]` parts are forwarded as reference images instead (respecting `max_images`).
+- **`size`**: Both image endpoints accept OpenAI's `size` (`"1024x768"`), applied to the fields you exposed as `width` and `height`. `"auto"` or no `size` keeps the workflow's default; a malformed value returns `400`.
 
 ## Environment Configuration
 

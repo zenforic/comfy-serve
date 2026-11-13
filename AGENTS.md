@@ -36,7 +36,7 @@ If you need to make changes to the dashboard UI:
 - `GET /api/config` - Returns the current `config.toml` layout.
 - `POST /api/config` - Overwrites `config.toml`.
 - `POST /api/generate` - The main custom generation endpoint. Supports both image and audio workflows — the response `Content-Type` is set dynamically based on the output type (e.g., `image/png`, `audio/mpeg`). (Secured by `Authorization: Bearer <key>` if `API_KEYS` is configured in `.env`)
-- `POST /v1/images/generations` and `POST /v1/images/edits` - OpenAI compatible endpoints mimicking DALL-E image generation and edit requests. `generations` maps the "prompt" JSON string to a specific field exposed as `prompt`. `edits` accepts `multipart/form-data`, mapping the `prompt` string to the `prompt` field and the `image` binary to the `image` field. (Secured by `Authorization: Bearer <key>` if `API_KEYS` is configured in `.env`)
+- `POST /v1/images/generations` and `POST /v1/images/edits` - OpenAI compatible endpoints mimicking DALL-E image generation and edit requests. `generations` maps the "prompt" JSON string to a specific field exposed as `prompt`. `edits` accepts `multipart/form-data`, mapping the `prompt` string to the `prompt` field and the `image` binary to the `image` field. Both accept `size` (`"WxH"`, `"auto"`/empty = workflow default), applied to the fields exposed as `width`/`height`; malformed values return `400`. (Secured by `Authorization: Bearer <key>` if `API_KEYS` is configured in `.env`)
 - `POST /api/login` - Authenticates a dashboard session.
 
 ## State Management

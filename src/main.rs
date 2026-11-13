@@ -502,7 +502,40 @@ async fn generate_handler(State(state): State<AppState>, headers: axum::http::He
 struct OpenAiImageRequest {
     prompt: String,
     model: Option<String>,
-    // Ignore n, size, etc for now to keep it simple
+    /// "WxH", applied to the fields exposed as `width`/`height`. `n` etc. are ignored.
+    size: Option<String>,
+}
+
+/// Parses an OpenAI `size` ("1024x1024"). `None` for empty or "auto".
+fn parse_openai_size(size: &str) -> Result<Option<(u64, u64)>, String> {
+    let s = size.trim().to_ascii_lowercase();
+    if s.is_empty() || s == "auto" {
+        return Ok(None);
+    }
+    let parsed = s.split_once('x').and_then(|(w, h)| Some((w.trim().parse::<u64>().ok()?, h.trim().parse::<u64>().ok()?)));
+    match parsed {
+        Some((w, h)) if w > 0 && h > 0 => Ok(Some((w, h))),
+        _ => Err(format!("Invalid size '{}', expected WIDTHxHEIGHT", size)),
+    }
+}
+
+fn size_field_value(exposed_as: &str, size: Option<(u64, u64)>) -> Option<serde_json::Value> {
+    let (w, h) = size?;
+    match exposed_as {
+        "width" => Some(w.into()),
+        "height" => Some(h.into()),
+        _ => None,
+    }
+}
+
+fn warn_if_size_unmapped(wf_config: &crate::config::WorkflowConfig, size: Option<(u64, u64)>, workflow: &str) {
+    if size.is_some() && !wf_config.exposed_fields.iter().any(|f| f.exposed_as == "width" || f.exposed_as == "height") {
+        tracing::warn!("size requested but workflow '{}' exposes no width/height fields — ignoring", workflow);
+    }
+}
+
+fn invalid_request(message: String) -> Response {
+    (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": {"message": message, "type": "invalid_request_error"}}))).into_response()
 }
 
 #[derive(serde::Serialize)]
@@ -571,7 +604,13 @@ async fn openai_generate_handler(State(state): State<AppState>, headers: axum::h
         None => return (StatusCode::BAD_REQUEST, "Workflow JSON not found").into_response(),
     };
 
-    // Apply the text prompt to the field mapped as "prompt" and any requested random seeds
+    let size = match parse_openai_size(payload.size.as_deref().unwrap_or("")) {
+        Ok(s) => s,
+        Err(e) => return invalid_request(e),
+    };
+    warn_if_size_unmapped(wf_config, size, &target_workflow);
+
+    // Apply the text prompt to the field mapped as "prompt", the requested size and any random seeds
     for field_map in &wf_config.exposed_fields {
         let mut final_val = None;
 
@@ -580,6 +619,8 @@ async fn openai_generate_handler(State(state): State<AppState>, headers: axum::h
                 return (StatusCode::BAD_REQUEST, "The prompt field is mapped to an image input, which is not supported by the /v1/images/generations endpoint.").into_response();
             }
             final_val = Some(serde_json::Value::String(payload.prompt.clone()));
+        } else if let Some(v) = size_field_value(&field_map.exposed_as, size) {
+            final_val = Some(v);
         } else if field_map.randomize {
             let random_seed: u64 = rand::random();
             final_val = Some(serde_json::Value::Number(random_seed.into()));
@@ -648,7 +689,8 @@ async fn openai_edits_handler(
     let mut image_bytes: Option<Vec<u8>> = None;
     let mut all_images: Vec<Vec<u8>> = Vec::new();
     let mut model: Option<String> = None;
-    
+    let mut size_str: Option<String> = None;
+
     let parts = parse_lenient_multipart(&bytes, &boundary);
     for (name, _filename, data) in parts {
         if name == "prompt" {
@@ -658,8 +700,15 @@ async fn openai_edits_handler(
             image_bytes = Some(data);
         } else if name == "model" {
             model = String::from_utf8(data).ok();
+        } else if name == "size" {
+            size_str = String::from_utf8(data).ok();
         }
     }
+
+    let size = match parse_openai_size(size_str.as_deref().unwrap_or("")) {
+        Ok(s) => s,
+        Err(e) => return invalid_request(e),
+    };
     
     let prompt = match prompt {
         Some(p) => p,
@@ -713,6 +762,8 @@ async fn openai_edits_handler(
         None => return (StatusCode::BAD_REQUEST, "Workflow JSON not found").into_response(),
     };
     
+    warn_if_size_unmapped(wf_config, size, &target_workflow);
+
     let host_header = headers.get("host").and_then(|h| h.to_str().ok());
     let mut cleanup = CleanupGuard::new(&state);
 
@@ -761,6 +812,8 @@ async fn openai_edits_handler(
                 }
                 Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to process image: {}", e)).into_response(),
             }
+        } else if let Some(v) = size_field_value(&field_map.exposed_as, size) {
+            final_val = Some(v);
         } else if field_map.randomize {
             let random_seed: u64 = rand::random();
             final_val = Some(serde_json::Value::Number(random_seed.into()));
@@ -1495,5 +1548,31 @@ mod image_input_tests {
 
         let bad = crate::config::ImageInputsConfig { node_id: "nope".into(), ..cfg };
         assert!(inject_reference_images(&mut wf, &bad, &["a.png".into()]).is_err());
+    }
+}
+
+#[cfg(test)]
+mod openai_size_tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_openai_size() {
+        assert_eq!(parse_openai_size("1024x768").unwrap(), Some((1024, 768)));
+        assert_eq!(parse_openai_size(" 512 X 512 ").unwrap(), Some((512, 512)));
+        assert_eq!(parse_openai_size("").unwrap(), None);
+        assert_eq!(parse_openai_size("auto").unwrap(), None);
+        assert_eq!(parse_openai_size("AUTO").unwrap(), None);
+        for bad in ["1024", "0x512", "512x0", "axb", "1024x", "-1x5", "1024x768x2"] {
+            assert!(parse_openai_size(bad).is_err(), "{}", bad);
+        }
+    }
+
+    #[test]
+    fn test_size_field_value() {
+        let size = Some((1024, 768));
+        assert_eq!(size_field_value("width", size), Some(serde_json::json!(1024)));
+        assert_eq!(size_field_value("height", size), Some(serde_json::json!(768)));
+        assert_eq!(size_field_value("prompt", size), None);
+        assert_eq!(size_field_value("width", None), None);
     }
 }
