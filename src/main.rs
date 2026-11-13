@@ -502,7 +502,96 @@ async fn generate_handler(State(state): State<AppState>, headers: axum::http::He
 struct OpenAiImageRequest {
     prompt: String,
     model: Option<String>,
-    // Ignore n, size, etc for now to keep it simple
+    /// "WxH", applied to the fields exposed as `width`/`height`. `n` etc. are ignored.
+    size: Option<String>,
+}
+
+/// Parses an OpenAI `size` ("1024x1024"). `None` for empty or "auto".
+fn parse_openai_size(size: &str) -> Result<Option<(u64, u64)>, String> {
+    let s = size.trim().to_ascii_lowercase();
+    if s.is_empty() || s == "auto" {
+        return Ok(None);
+    }
+    let parsed = s.split_once('x').and_then(|(w, h)| Some((w.trim().parse::<u64>().ok()?, h.trim().parse::<u64>().ok()?)));
+    match parsed {
+        Some((w, h)) if w > 0 && h > 0 => Ok(Some((w, h))),
+        _ => Err(format!("Invalid size '{}', expected WIDTHxHEIGHT", size)),
+    }
+}
+
+fn size_field_value(exposed_as: &str, size: Option<(u64, u64)>) -> Option<serde_json::Value> {
+    let (w, h) = size?;
+    match exposed_as {
+        "width" => Some(w.into()),
+        "height" => Some(h.into()),
+        _ => None,
+    }
+}
+
+/// Side lengths for `size=auto` on edits are rounded to this (latent factor 8 × patch 2).
+const AUTO_SIZE_MULTIPLE: u64 = 16;
+const AUTO_SIZE_MIN_SIDE: u64 = 256;
+const AUTO_SIZE_MAX_SIDE: u64 = 2048;
+
+/// Default output size of a workflow: the current values of the fields exposed as `width`/`height`.
+fn workflow_default_size(wf_config: &crate::config::WorkflowConfig, wf_json: &serde_json::Value) -> Option<(u64, u64)> {
+    let field = |name: &str| {
+        let f = wf_config.exposed_fields.iter().find(|f| f.exposed_as == name)?;
+        wf_json.get(&f.original_node_id)?.get("inputs")?.get(&f.original_field_name)?.as_u64()
+    };
+    Some((field("width")?, field("height")?)).filter(|&(w, h)| w > 0 && h > 0)
+}
+
+/// Scales `src` to about `budget` pixels keeping its aspect ratio; each side is a multiple of
+/// `AUTO_SIZE_MULTIPLE` within `AUTO_SIZE_MIN_SIDE..=AUTO_SIZE_MAX_SIDE`.
+fn fit_size_to_budget(src: (u64, u64), budget: u64) -> (u64, u64) {
+    let (w, h) = (src.0.max(1) as f64, src.1.max(1) as f64);
+    let scale = (budget as f64 / (w * h)).sqrt();
+    let side = |v: f64| {
+        let m = AUTO_SIZE_MULTIPLE as f64;
+        (((v * scale) / m).round() as u64 * AUTO_SIZE_MULTIPLE).clamp(AUTO_SIZE_MIN_SIDE, AUTO_SIZE_MAX_SIDE)
+    };
+    (side(w), side(h))
+}
+
+/// Output size for an edit without `size` (or with `auto`): the first input image's aspect
+/// ratio at the workflow's default pixel count, like `auto` in OpenAI's `gpt-image-1`.
+/// `None` (keep the workflow default) if the image's dimensions can't be read.
+fn auto_edit_size(image: &[u8], default_size: (u64, u64)) -> Option<(u64, u64)> {
+    let dim = match imagesize::blob_size(image) {
+        Ok(d) if d.width > 0 && d.height > 0 => d,
+        _ => {
+            tracing::warn!("size=auto: could not read the input image's dimensions — using the workflow default size");
+            return None;
+        }
+    };
+    Some(fit_size_to_budget((dim.width as u64, dim.height as u64), default_size.0 * default_size.1))
+}
+
+/// Output size for `/v1/images/edits`: the explicit `size` if given, otherwise the first input
+/// image's aspect ratio scaled to the workflow's default pixel count. `None` keeps the workflow default.
+fn resolve_edit_size(
+    explicit: Option<(u64, u64)>,
+    wf_config: &crate::config::WorkflowConfig,
+    wf_json: &serde_json::Value,
+    first_image: Option<&[u8]>,
+) -> Option<(u64, u64)> {
+    if explicit.is_some() {
+        return explicit;
+    }
+    // A workflow without width/height fields has nothing to set
+    let default = workflow_default_size(wf_config, wf_json)?;
+    auto_edit_size(first_image?, default)
+}
+
+fn warn_if_size_unmapped(wf_config: &crate::config::WorkflowConfig, size: Option<(u64, u64)>, workflow: &str) {
+    if size.is_some() && !wf_config.exposed_fields.iter().any(|f| f.exposed_as == "width" || f.exposed_as == "height") {
+        tracing::warn!("size requested but workflow '{}' exposes no width/height fields — ignoring", workflow);
+    }
+}
+
+fn invalid_request(message: String) -> Response {
+    (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": {"message": message, "type": "invalid_request_error"}}))).into_response()
 }
 
 #[derive(serde::Serialize)]
@@ -571,7 +660,13 @@ async fn openai_generate_handler(State(state): State<AppState>, headers: axum::h
         None => return (StatusCode::BAD_REQUEST, "Workflow JSON not found").into_response(),
     };
 
-    // Apply the text prompt to the field mapped as "prompt" and any requested random seeds
+    let size = match parse_openai_size(payload.size.as_deref().unwrap_or("")) {
+        Ok(s) => s,
+        Err(e) => return invalid_request(e),
+    };
+    warn_if_size_unmapped(wf_config, size, &target_workflow);
+
+    // Apply the text prompt to the field mapped as "prompt", the requested size and any random seeds
     for field_map in &wf_config.exposed_fields {
         let mut final_val = None;
 
@@ -580,6 +675,8 @@ async fn openai_generate_handler(State(state): State<AppState>, headers: axum::h
                 return (StatusCode::BAD_REQUEST, "The prompt field is mapped to an image input, which is not supported by the /v1/images/generations endpoint.").into_response();
             }
             final_val = Some(serde_json::Value::String(payload.prompt.clone()));
+        } else if let Some(v) = size_field_value(&field_map.exposed_as, size) {
+            final_val = Some(v);
         } else if field_map.randomize {
             let random_seed: u64 = rand::random();
             final_val = Some(serde_json::Value::Number(random_seed.into()));
@@ -648,7 +745,8 @@ async fn openai_edits_handler(
     let mut image_bytes: Option<Vec<u8>> = None;
     let mut all_images: Vec<Vec<u8>> = Vec::new();
     let mut model: Option<String> = None;
-    
+    let mut size_str: Option<String> = None;
+
     let parts = parse_lenient_multipart(&bytes, &boundary);
     for (name, _filename, data) in parts {
         if name == "prompt" {
@@ -658,8 +756,15 @@ async fn openai_edits_handler(
             image_bytes = Some(data);
         } else if name == "model" {
             model = String::from_utf8(data).ok();
+        } else if name == "size" {
+            size_str = String::from_utf8(data).ok();
         }
     }
+
+    let size = match parse_openai_size(size_str.as_deref().unwrap_or("")) {
+        Ok(s) => s,
+        Err(e) => return invalid_request(e),
+    };
     
     let prompt = match prompt {
         Some(p) => p,
@@ -713,6 +818,10 @@ async fn openai_edits_handler(
         None => return (StatusCode::BAD_REQUEST, "Workflow JSON not found").into_response(),
     };
     
+    warn_if_size_unmapped(wf_config, size, &target_workflow);
+
+    let size = resolve_edit_size(size, wf_config, &wf_json, all_images.first().map(|v| v.as_slice()));
+
     let host_header = headers.get("host").and_then(|h| h.to_str().ok());
     let mut cleanup = CleanupGuard::new(&state);
 
@@ -761,6 +870,8 @@ async fn openai_edits_handler(
                 }
                 Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to process image: {}", e)).into_response(),
             }
+        } else if let Some(v) = size_field_value(&field_map.exposed_as, size) {
+            final_val = Some(v);
         } else if field_map.randomize {
             let random_seed: u64 = rand::random();
             final_val = Some(serde_json::Value::Number(random_seed.into()));
@@ -1495,5 +1606,101 @@ mod image_input_tests {
 
         let bad = crate::config::ImageInputsConfig { node_id: "nope".into(), ..cfg };
         assert!(inject_reference_images(&mut wf, &bad, &["a.png".into()]).is_err());
+    }
+}
+
+#[cfg(test)]
+mod openai_size_tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_openai_size() {
+        assert_eq!(parse_openai_size("1024x768").unwrap(), Some((1024, 768)));
+        assert_eq!(parse_openai_size(" 512 X 512 ").unwrap(), Some((512, 512)));
+        assert_eq!(parse_openai_size("").unwrap(), None);
+        assert_eq!(parse_openai_size("auto").unwrap(), None);
+        assert_eq!(parse_openai_size("AUTO").unwrap(), None);
+        for bad in ["1024", "0x512", "512x0", "axb", "1024x", "-1x5", "1024x768x2"] {
+            assert!(parse_openai_size(bad).is_err(), "{}", bad);
+        }
+    }
+
+    #[test]
+    fn test_size_field_value() {
+        let size = Some((1024, 768));
+        assert_eq!(size_field_value("width", size), Some(serde_json::json!(1024)));
+        assert_eq!(size_field_value("height", size), Some(serde_json::json!(768)));
+        assert_eq!(size_field_value("prompt", size), None);
+        assert_eq!(size_field_value("width", None), None);
+    }
+
+    /// Minimal PNG header (signature + IHDR) — enough for `imagesize`.
+    fn png_header(w: u32, h: u32) -> Vec<u8> {
+        let mut v = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR".to_vec();
+        v.extend_from_slice(&w.to_be_bytes());
+        v.extend_from_slice(&h.to_be_bytes());
+        v.extend_from_slice(&[8, 2, 0, 0, 0, 0, 0, 0, 0]);
+        v
+    }
+
+    /// `qwen_image_2.1`-like workflow: latent width/height exposed, default 768x1366.
+    fn qwen_like() -> (crate::config::WorkflowConfig, serde_json::Value) {
+        let cfg: crate::config::WorkflowConfig = toml::from_str(r#"
+            active = true
+            file_name = "qwen.json"
+            [[exposed_fields]]
+            original_node_id = "latent"
+            original_field_name = "width"
+            exposed_as = "width"
+            [[exposed_fields]]
+            original_node_id = "latent"
+            original_field_name = "height"
+            exposed_as = "height"
+        "#).unwrap();
+        let wf = serde_json::json!({"latent": {"inputs": {"width": 768, "height": 1366, "batch_size": 1}}});
+        (cfg, wf)
+    }
+
+    #[test]
+    fn test_edit_size_auto_landscape() {
+        let (cfg, wf) = qwen_like();
+        let img = png_header(2400, 1792);
+        let (w, h) = resolve_edit_size(None, &cfg, &wf, Some(&img)).unwrap();
+        assert_eq!((w, h), (1184, 880));
+        assert!(w % 16 == 0 && h % 16 == 0);
+        assert!(((w as f64 / h as f64) - 4.0 / 3.0).abs() < 0.02);
+    }
+
+    #[test]
+    fn test_edit_size_auto_portrait() {
+        let (cfg, wf) = qwen_like();
+        let img = png_header(1792, 2400);
+        assert_eq!(resolve_edit_size(None, &cfg, &wf, Some(&img)), Some((880, 1184)));
+    }
+
+    #[test]
+    fn test_edit_size_explicit_wins() {
+        let (cfg, wf) = qwen_like();
+        let img = png_header(2400, 1792);
+        assert_eq!(resolve_edit_size(Some((1024, 1024)), &cfg, &wf, Some(&img)), Some((1024, 1024)));
+    }
+
+    #[test]
+    fn test_edit_size_fallbacks() {
+        let (cfg, wf) = qwen_like();
+        // Unreadable image or no image: keep the workflow default
+        assert_eq!(resolve_edit_size(None, &cfg, &wf, Some(b"not an image")), None);
+        assert_eq!(resolve_edit_size(None, &cfg, &wf, None), None);
+        // Workflow without width/height fields: nothing to set
+        let mut no_size = cfg.clone();
+        no_size.exposed_fields.clear();
+        assert_eq!(resolve_edit_size(None, &no_size, &wf, Some(&png_header(2400, 1792))), None);
+    }
+
+    #[test]
+    fn test_fit_size_to_budget_limits() {
+        // Square stays square, extreme panoramas are clamped to the side limits
+        assert_eq!(fit_size_to_budget((4000, 4000), 1024 * 1024), (1024, 1024));
+        assert_eq!(fit_size_to_budget((10000, 100), 1024 * 1024), (AUTO_SIZE_MAX_SIDE, AUTO_SIZE_MIN_SIDE));
     }
 }
